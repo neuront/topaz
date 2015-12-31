@@ -1,0 +1,1668 @@
+class Exception
+    ctor(line, message, type, object)
+        this.line: line
+        this.message: message
+        this.type: type
+        this.object: object
+
+    func toString()
+        return JSON.stringify({
+            line: this.line,
+            message: this.message,
+            type: this.type,
+            object: this.object,
+        })
+
+PATTERNS: [
+    [/^[a-z_][0-9a-z_\-]*/i, 'ident'],
+
+    [/^"([^"\\]*(\\.[^"\\]*)*)"/i, 'value', 'str'],
+    [/^'([^'\\]*(\\.[^'\\]*)*)'/i, 'value', 'str'],
+    [/^[0-9]+/, 'value', 'num'],
+    [/^[0-9]*\.[0-9]+/, 'value', 'num'],
+    [/^:::/, 'textblock'],
+    [/^:.+$/, 'text'],
+
+    [/^==/, 'op', 'eq'],
+    [/^<=/, 'op', 'le'],
+    [/^>=/, 'op', 'ge'],
+    [/^!=/, 'op', 'ne'],
+    [/^</, 'op', 'lt'],
+    [/^>/, 'op', 'gt'],
+
+    [/^&&/, 'op', 'and'],
+    [/^\|\|/, 'op', 'or'],
+    [/^!/, 'op', 'not'],
+
+    [/^\+/, 'op', 'plus'],
+    [/^\-/, 'op', 'minus'],
+    [/^\*/, 'op', 'times'],
+    [/^\//, 'op', 'div'],
+
+    [/^=/, 'eq'],
+    [/^#/, 'shp'],
+    [/^\./, 'dot'],
+    [/^%/, 'percentage'],
+    [/^,/, 'comma'],
+
+    [/^\(/, 'openparen'],
+    [/^\)/, 'closeparen'],
+    [/^\[/, 'openbracket'],
+    [/^\]/, 'closebracket'],
+]
+
+class Token
+    ctor(image, type, detail, line)
+        this.image: image
+        this.type: type
+        this.detail: detail if detail else type
+        this.line: line
+
+    func throw_(msg)
+        throw Exception(this.line, msg, 'token', this)
+
+    func unexpected()
+        this.throw_('Unexpected')
+
+func tokenize(string, line)
+    func tkz(string, result)
+        func nextToken(string)
+            PATTERNS |:
+                r: $[0].exec(string)
+                if r
+                    return [Token(r[0], $[1], $[2], line), string.replace($[0], '').trimLeft()]
+            throw Exception(line, 'Unexpected pattern', 'lex', string)
+
+        if string.length = 0
+            return result
+        r: nextToken(string)
+        result.push(r[0])
+        return tkz(r[1], result)
+    return tkz(string, [])
+
+func testTrue(a)
+    if typeof a = 'boolean'
+        return a
+    if typeof a = 'number'
+        return a != 0 && !isNaN(a)
+    a |:
+        return true
+    return false
+
+func toString(a)
+    if a = undefined || a = null
+        return a + ''
+    return a.toString()
+
+class ValueBase
+    ctor(line)
+        this.line: line
+
+    func apply(builder)
+        return null
+
+    func literal()
+        this.throw_('Cannot convert to literal value')
+
+    func test(builder)
+        return testTrue(this.apply(builder))
+
+    func throw_(msg)
+        throw Exception(this.line, msg, 'value', this)
+
+class LiteralValue: ValueBase
+    ctor(line, v) super(line)
+        this.value: v
+
+    func apply(builder)
+        return this.value
+
+    func literal()
+        return this.value
+
+class NameValue: ValueBase
+    ctor(line, n) super(line)
+        this.name: n
+
+    func apply(builder)
+        return builder.getValue(this.name, this)
+
+    func literal()
+        return this.name
+
+UNARY_OP_FUNC: {
+    '+': (a): a,
+    '-': (a): -a,
+    '!': (a): !testTrue(a),
+}
+
+class UnaryOpValue: ValueBase
+    ctor(line, opImage, rhs) super(line)
+        this.op: UNARY_OP_FUNC[opImage]
+        this.rhs: rhs
+
+    func apply(builder)
+        return this.op(this.rhs.apply(builder))
+
+BINARY_OP_FUNC: {
+    '+': (a, b): a + b,
+    '-': (a, b): a - b,
+    '*': (a, b): a * b,
+    '/': (a, b): a / b,
+    '%': (a, b): a % b,
+    '==': (a, b): a = b,
+    '!=': (a, b): a != b,
+    '<=': (a, b): a <= b,
+    '>=': (a, b): a >= b,
+    '<': (a, b): a < b,
+    '>': (a, b): a > b,
+    '&&': (a, b): b if testTrue(a) else a,
+    '||': (a, b): a if testTrue(a) else b,
+}
+
+class BinaryOpValue: ValueBase
+    ctor(line, opImage, lhs, rhs) super(line)
+        this.op: BINARY_OP_FUNC[opImage]
+        this.lhs: lhs
+        this.rhs: rhs
+
+    func apply(builder)
+        return this.op(this.lhs.apply(builder), this.rhs.apply(builder))
+
+class MemberAccess: ValueBase
+    ctor(line, lhs, rhs) super(line)
+        this.lhs: lhs
+        this.rhs: rhs.literal()
+
+    func apply(builder)
+        obj: this.lhs.apply(builder)
+        if obj = undefined || obj = null
+            this.throw_('Access property ' + this.rhs + ' from ' + obj)
+        return obj[this.rhs]
+
+class Lookup: ValueBase
+    ctor(line, lhs, rhs) super(line)
+        this.object: lhs
+        this.key: rhs
+
+    func apply(builder)
+        obj: this.object.apply(builder)
+        key: this.key.apply(builder)
+        if obj = undefined || obj = null
+            this.throw_('Lookup ' + key + ' from ' + obj)
+        return obj[key]
+
+class ListValue: ValueBase
+    ctor(line, list) super(line)
+        this.list: list
+
+    func apply(builder)
+        return this.list |: $.apply(builder)
+
+class ConditionalValue: ValueBase
+    ctor(line, predicate, consequence, alternative) super(line)
+        this.pred: predicate
+        this.consq: consequence
+        this.alter: alternative
+
+    func apply(builder)
+        return this.consq.apply(builder) if this.pred.test(builder) else this.alter.apply(builder)
+
+class ElementBase
+    ctor(parent, indentLevel, line)
+        this.parent: parent
+        this.indentLevel: indentLevel
+        this.line: line
+
+    func append(child)
+        this.throw_('Append an element to an unexpected place')
+
+    func getAppendPoint(child)
+        return this
+
+    func render(r)
+        this.throw_('Element base not renderable')
+
+    func throw_(msg)
+        throw Exception(this.line, msg, 'element', this)
+
+    func findChildren(tag)
+        return []
+
+    func sliceChildren(tag)
+        return []
+
+    func isTag(tag)
+        return false
+
+    func isText()
+        return false
+
+    func attachElse(t)
+        t.throw_('Else clause not match an if')
+
+    func finish(builder)
+        0
+
+    func applyVariables(parent, builder, newIndent)
+        return this
+
+class CompoundElement: ElementBase
+    ctor(parent, indentLevel, line) super(parent, indentLevel, line)
+        this.children: []
+
+    func append(child)
+        if child
+            this.children.push(child)
+
+    func getAppendPoint(indentLevel)
+        if indentLevel <= this.indentLevel
+            return this.parent
+        if this.children.length = 0
+            return this
+        return this.lastChild().getAppendPoint(indentLevel)
+
+    func lastChild()
+        return this.children[this.children.length - 1]
+
+    func findChildren(tag)
+        return this.children |? $.isTag(tag)
+
+    func sliceChildren(tag)
+        r: this.children |? $.isTag(tag)
+        this.children: this.children |? !$.isTag(tag)
+        return r
+
+    func checkNoChildren()
+        if this.children.length != 0
+            this.throw_('Unexpected children for void element')
+
+class FakeRoot: CompoundElement
+    ctor() super(null, -1, -1)
+        this.children: []
+
+    func getAppendPoint(indentLevel)
+        if this.children.length = 0
+            return this
+        return this.lastChild().getAppendPoint(indentLevel)
+
+    func finish(builder)
+        if this.children.length != 0
+            this.lastChild().finish(builder)
+
+class TagElementBase: CompoundElement
+    ctor(parent, indentLevel, line, tag) super(parent, indentLevel, line)
+        this.tag: tag
+        this.attributes: {id: null}
+        this.args: []
+        this.argsKey: {}
+        this.classes: []
+        this.children: []
+
+    func isTag(tag)
+        return this.tag = tag
+
+    func finish(builder)
+        if this.children.length != 0
+            this.lastChild().finish(builder)
+        builder.onTagEnd(this)
+
+    func getOnlyArg(forwhat)
+        ifnot this.args && this.args.length = 1
+            this.throw_('Require only one argument: ' + forwhat)
+        return this.args[0]
+
+class AppliedTagElement: TagElementBase
+    ctor(parent, indentLevel, line, tag) super(parent, indentLevel, line, tag)
+        0
+
+    func arg(arg)
+        if this.argsKey[arg]
+            return
+        this.args.push(arg)
+        this.argsKey[arg]: true
+
+    func attr(key, value)
+        this.attributes[key]: value
+
+    func setId(id)
+        this.attributes.id: id
+
+    func addClass(cls)
+        this.classes.push(cls)
+
+    func applyVariables(p, c)
+        return this
+
+    func render(r)
+        return r.renderTag(this)
+
+class TagElement: TagElementBase
+    ctor(parent, indentLevel, line, tag) super(parent, indentLevel, line, tag)
+        0
+
+    func arg(arg, line)
+        if this.argsKey[arg]
+            return
+        this.args.push(LiteralValue(line, arg))
+        this.argsKey[arg]: true
+
+    func argExpr(expr)
+        this.args.push(expr)
+
+    func _setAttr(key, v)
+        if this.attributes[key]
+            this.throw_('Duplicate attribute: ' + key)
+        this.attributes[key]: v
+
+    func attr(key, value, line)
+        if key = 'class'
+            return value.split(' ') |: this.addClass($) if $.length != 0 else 0
+        this._setAttr(key, LiteralValue(line, value))
+
+    func attrExpr(key, expr)
+        if key = 'class'
+            return this.addClassExpr(expr)
+        this._setAttr(key, expr)
+
+    func setId(id, line)
+        this.setIdExpr(LiteralValue(line, id))
+
+    func setIdExpr(id)
+        if this.attributes.id != null
+            this.throw_('Duplicate id')
+        this.attributes.id: id
+
+    func addClass(cls, line)
+        this.addClassExpr(LiteralValue(line, cls))
+
+    func addClassExpr(cls)
+        this.classes.push(cls)
+
+    func applyVariables(parent, builder, newIndent)
+        element: AppliedTagElement(parent,
+                                   this.indentLevel
+                                           if typeof newIndent = 'undefined'
+                                           else newIndent,
+                                   this.line, this.tag)
+        this.attributes |:
+            if $
+                element.attr($k, $.apply(builder))
+        this.args |:
+            r: $.apply(builder)
+            if r
+                element.arg(r)
+        this.classes |:
+            r: $.apply(builder)
+            if r
+                element.addClass(r)
+        this.children |: element.append($.applyVariables(element, builder))
+        return element
+
+class TextBase: ElementBase
+    ctor(parent, indentLevel, line) super(parent, indentLevel, line)
+        0
+
+    func getAppendPoint(indentLevel)
+        return this.parent
+
+    func append(child)
+        this.throw_('Unable to append to text')
+
+    func isText()
+        return true
+
+class TextLineElement: TextBase
+    ctor(parent, indentLevel, line, text, escape) super(parent, indentLevel, line)
+        this.text: text
+        this.escape: escape if escape else escapeText
+
+    func render(r)
+        return r.renderTextLine(this, null, this.escape)
+
+class TextBlockElement: TextBase
+    ctor(parent, indentLevel, line, lines, left, right, escape, eol) super(
+            parent, indentLevel, line)
+        this.lines: lines
+        this.left: left
+        this.right: right
+        this.escape: escape
+        this.eol: eol
+
+    func render(r)
+        return r.renderTextBlock(this)
+
+class ValueElement: ElementBase
+    ctor(parent, indentLevel, value) super(parent, indentLevel, value.line)
+        this.value: value
+
+    func getAppendPoint(indentLevel)
+        return this.parent
+
+    func append(child)
+        this.throw_('Unable to append to text')
+
+    func applyVariables(parent, builder, ni)
+        value: this.value.apply(builder)
+        return TextLineElement(
+            this.parent, this.indentLevel if ni = undefined else ni, this.line, toString(value))
+
+class IfElement: CompoundElement
+    ctor(parent, indentLevel, predicate) super(parent, indentLevel, predicate.line)
+        this.predicate: predicate
+        this.consequence: this.children
+        this.alternative: []
+
+    func applyVariables(parent, builder, ni)
+        newIndent: this.indentLevel if typeof ni = 'undefined' else ni
+        if this.predicate.test(builder)
+            this.consequence |: parent.append($.applyVariables(parent, builder, newIndent))
+        else
+            this.alternative |: parent.append($.applyVariables(parent, builder, newIndent))
+        return null
+
+    func attachElse(_)
+        this.children: this.alternative
+
+class ForElement: CompoundElement
+    ctor(parent, indentLevel, keyName, elementName, object) super(parent, indentLevel, object.line)
+        this.keyName: keyName
+        this.elementName: elementName
+        this.object: object
+
+    func applyVariables(parent, builder, ni)
+        newIndent: this.indentLevel if typeof ni = 'undefined' else ni
+        this.object.apply(builder) |:
+            if this.keyName
+                builder.setValue(this.keyName, $k)
+            builder.setValue(this.elementName, $)
+            this.children |: parent.append($.applyVariables(parent, builder, newIndent))
+        return null
+
+class Automation
+    ctor(stack)
+        this.stack: stack
+
+    func activated()
+        0
+
+    func push(token)
+        f: '_push_' + token.type
+        if this[f]
+            return this[f](token)
+        token.unexpected()
+
+    func setPushFunc(tokenType, fn)
+        self: this
+        self['_push_' + tokenType]: (token): fn(self, token)
+
+    func reduced(expr)
+        throw 'Unimplemented expr'
+
+    func reducedList(exprs, line)
+        throw 'Unimplemented exprs'
+
+    func addLine(string, lineno)
+        tokens: tokenize(string.trim(), lineno)
+        if tokens.length = 0
+            return
+        this.stack.consume(tokens)
+
+    func finish()
+        this.stack.pop()
+
+    func finished()
+        return true
+
+    func forceFinish()
+        this.finish()
+
+UNARY_OP_PRI: {
+    '!': 2,
+    '+': 6,
+    '-': 6,
+}
+
+BINARY_OP_PRI: {
+    '||': 0,
+    '&&': 1,
+
+    '==': 3,
+    '!=': 3,
+    '<=': 3,
+    '>=': 3,
+    '<': 3,
+    '>': 3,
+
+    '+': 4,
+    '-': 4,
+
+    '*': 5,
+    '/': 5,
+    '%': 5,
+
+    '.': 7,
+}
+
+KEYWORDS: {
+    'for': true,
+    'in': true,
+    'if': true,
+    'else': true,
+}
+
+class DynamicDataAutomationBase: Automation
+    ctor(stack) super(stack)
+        0
+
+    func _push_ident(token)
+        if KEYWORDS[token.image]
+            f: '_pushkw_' + token.image
+            if this[f]
+                return this[f](token)
+            token.type: 'keyword'
+            token.detail: 'keyword'
+            return token.unexpected()
+        this._pushIdent(token)
+
+class ExprAutomationBase: DynamicDataAutomationBase
+    ctor(stack, closeToken) super(stack)
+        this.closeReport: ''
+        if closeToken
+            this.closeReport: ', expect ' + closeToken.image
+
+            self: this
+            self['_push_' + closeToken.type]: (token): self.closing(token)
+        else
+            self: this
+            self.finished: (): self._finished()
+
+    func _push_closeparen(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
+    func _push_closebracket(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
+    func finished()
+        return false
+
+func makeExprListAutomation(stack, line, closer)
+    return ExprListAutomation(stack, line, closer)
+
+func makeConditionalExprAutomation(stack, line, consq)
+    return ConditionalExprAutomation(stack, line, consq)
+
+class ExprAutomation: ExprAutomationBase
+    ctor(stack, line, closeToken) super(stack, closeToken)
+        this._needFactor: true
+        this._exprStack: []
+        this._opStack: []
+        this.line: line
+
+    func closing(token)
+        if this._exprStack.length = 0
+            token.unexpected()
+        this.finish()
+
+    func finish()
+        this._reduceBinary(-1)
+        this.stack.pop()
+        this.stack.top().reduced(this._exprStack[0])
+
+    func _finished()
+        return !this._needFactor
+
+    func forceFinish()
+        ifnot this.finished()
+            throw Exception(this.line, 'Unexpected EOF', 'am', this)
+        this.finish()
+
+    func _push_dot(token)
+        token.type: 'op'
+        token.construct: (exprStack):
+            rhs: exprStack.shift()
+            lhs: exprStack.shift()
+            return MemberAccess(token.line, lhs, rhs)
+        return this._push_op(token)
+
+    func _push_percentage(token)
+        token.type: 'op'
+        return this._push_op(token)
+
+    func _push_op(token)
+        if this._needFactor
+            return this._pushUnaryOp(token)
+        token.construct: token.construct if token.construct else (exprStack):
+            rhs: exprStack.shift()
+            lhs: exprStack.shift()
+            return BinaryOpValue(token.line, token.image, lhs, rhs)
+        token.pri: BINARY_OP_PRI[token.image]
+        this._reduceBinary(token.pri)
+        this._opStack.unshift(token)
+        this._needFactor: true
+
+    func _pushUnaryOp(token)
+        pri: UNARY_OP_PRI[token.image]
+        if pri = undefined
+            token.throw_('Unexpected operator')
+        token.pri: pri
+        token.construct: (exprStack):
+            rhs: exprStack.shift()
+            return UnaryOpValue(token.line, token.image, rhs)
+        this._opStack.unshift(token)
+
+    func _reduceBinary(currentOpPri)
+        if this._opStack.length = 0
+            return
+        if this._opStack[0].pri >= currentOpPri
+            top: this._opStack.shift()
+            this._exprStack.unshift(top.construct(this._exprStack))
+            this._reduceBinary(currentOpPri)
+
+    func _pushIdent(token)
+        return this._pushFactor(token, NameValue)
+
+    func _push_value(token)
+        if token.detail = 'num'
+            return this._pushFactor(token, (ln, i): LiteralValue(ln, parseFloat(i)))
+        if token.detail = 'str'
+            return this._pushFactor(token, (ln, i): LiteralValue(ln, eval(i)))
+        return this._pushFactor(token, LiteralValue)
+
+    func _pushValue(value)
+        this._needFactor: false
+        this._exprStack.unshift(value)
+
+    func _pushFactor(token, construct)
+        ifnot this._needFactor
+            token.unexpected()
+        this._pushValue(construct(token.line, token.image))
+
+    func reducedList(list, line)
+        this._pushValue(ListValue(line, list))
+
+    func _push_openparen(token)
+        ifnot this._needFactor
+            token.unexpected()
+        this.stack.push(ExprAutomation(this.stack, token.line, Token(')', 'closeparen')))
+        self: this
+        self.reduced: (expr): self._pushValue(expr)
+
+    func _push_openbracket(token)
+        closerTk: Token(']', 'closebracket')
+        if this._needFactor
+            return this.stack.push(makeExprListAutomation(this.stack, token.line, closerTk))
+        this.stack.push(ExprAutomation(this.stack, token.line, closerTk))
+        this.needFactor: false
+        self: this
+        self.reduced: (expr):
+            t: Token('.', 'op', 'lookup', token.line)
+            t.construct: (exprStack):
+                rhs: exprStack.shift()
+                lhs: exprStack.shift()
+                return Lookup(token.line, lhs, rhs)
+            self._push_op(t)
+            self._pushValue(expr)
+
+    func _pushkw_if(token)
+        if this._needFactor
+            token.unexpected()
+        this._reduceBinary(-1)
+        e: this._exprStack.pop()
+        this.stack.push(makeConditionalExprAutomation(this.stack, token.line, e))
+        self: this
+        self.reduced: (expr): self._pushValue(expr)
+
+class ExprAutomationCloseAny: ExprAutomation
+    ctor(stack, line) super(stack, line)
+        0
+
+    func _reduceFinish(token)
+        this.closing(token)
+        this.stack.top().push(token)
+
+    func _push_closeparen(token)
+        this._reduceFinish(token)
+
+    func _push_closebracket(token)
+        this._reduceFinish(token)
+
+    func _pushkw_else(token)
+        this._reduceFinish(token)
+
+class ConditionalExprAutomation: ExprAutomationBase
+    ctor(stack, line, consq) super(stack)
+        this.line: line
+        this._predicate: null
+        this._consequence: consq
+
+        self: this
+        self.reduced: (expr):
+            self._predicate: expr
+            self._pushkw_else: (token):
+                self.stack.push(ExprAutomationCloseAny(self.stack, token.line))
+                self.reduced: (expr): self._finish(expr)
+
+    func activated()
+        this.stack.push(ExprAutomationCloseAny(this.stack, this.line))
+
+    func _finish(expr)
+        this.finish()
+        this.stack.top().reduced(ConditionalValue(
+                    this.line, this._predicate, this._consequence, expr))
+
+    func _push_closeparen(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
+    func _push_closebracket(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
+class ExprListAutomation: ExprAutomationBase
+    ctor(stack, line, closeToken) super(stack, closeToken)
+        this.line: line
+        this._closeType: closeToken.type
+        this._exprs: []
+
+        ['ident', 'value', 'op', 'openparen', 'openbracket'] |: this.setPushFunc($, (self, t):
+            a: self._pushAutomation()
+            a.push(t)
+        )
+
+    func reduced(expr)
+        this._exprs.push(expr)
+
+    func closing(_)
+        this.finish()
+
+    func _push_closebracket(token)
+        this.finish()
+
+    func finish()
+        this.stack.pop()
+        this.stack.top().reducedList(this._exprs, this.line)
+
+    func _pushAutomation()
+        self: this
+        a: ExprAutomation(self.stack, self.line)
+        a.setPushFunc('comma', (am, token):
+            am.closing(token)
+        )
+        a.setPushFunc(self._closeType, (am, token):
+            am.closing(token)
+            self.finish()
+        )
+        self.stack.push(a)
+        return a
+
+    func _finished()
+        return true
+
+class ForHeadAutomation: DynamicDataAutomationBase
+    ctor(forToken, stack, parent) super(stack)
+        this.forToken: forToken
+        this.parent: parent
+        this.declares: []
+        this._init()
+
+    func _init()
+        self: this
+        self._pushIdent: (token): self._pushDeclare(token)
+        self._push_comma: (token): token.unexpected()
+
+    func _pushkw_in(token)
+        if this.declares.length = 0 || this.declares.length > 2
+            this.forToken.throw_('For loop expects 1 or 2 declared names, but '
+                                 + this.declares.length)
+        this.stack.push(ExprAutomation(this.stack, token.line))
+
+        self: this
+        self.reduced: (expr):
+            if this.declares.length = 1
+                self.parent.append(ForElement(
+                            self.parent, self.stack.indentLevel,
+                            null, this.declares[0], expr))
+            else
+                self.parent.append(ForElement(
+                            self.parent, self.stack.indentLevel,
+                            this.declares[0], this.declares[1], expr))
+            self.stack.pop()
+
+    func _waitComma()
+        self: this
+        self._pushIdent: (token): token.unexpected()
+        self._push_comma: (token): self._init()
+
+    func _pushDeclare(token)
+        this.declares.push(token.image)
+        this._waitComma()
+
+    func finished()
+        return false
+
+    func forceFinish()
+        this.forToken.throw_('Unexpected end of for loop')
+
+class CtrlFlowAutomation: DynamicDataAutomationBase
+    ctor(stack, parent) super(stack)
+        this.parent: parent
+        this._finished: false
+        this._reduced: (_): 0
+
+        ['value', 'op', 'openparen', 'openbracket'] |: this.setPushFunc($, (self, t):
+            self._pushExprAm(t)
+        )
+
+    func finished()
+        return this._finished
+
+    func _pushkw_if(token)
+        self: this
+        self.stack.push(ExprAutomation(self.stack, token.line))
+        self._reduced: (expr):
+            self.parent.append(IfElement(self.parent, self.stack.indentLevel, expr))
+            self._finished: true
+
+    func _pushkw_for(token)
+        this.stack.pop()
+        this.stack.push(ForHeadAutomation(token, this.stack, this.parent))
+
+    func _pushkw_else(token)
+        ifnot this.parent.lastChild()
+            token.throw_('Else clause not match an if')
+        this.parent.lastChild().attachElse(token)
+        this._finished: true
+
+    func _pushExprAm(token)
+        self: this
+        self.stack.push(ExprAutomation(self.stack, token.line))
+        self._reduced: (expr):
+            self.parent.append(ValueElement(self.parent, self.stack.indentLevel, expr))
+        self.stack.top().push(token)
+        self._finished: true
+
+    func _pushIdent(token)
+        this._pushExprAm(token)
+
+    func reduced(expr)
+        return this._reduced(expr)
+
+    func forceFinish()
+        this.parent.throw_('''Unexpected `%' attached''')
+
+class TagAutomation: Automation
+    ctor(stack, element) super(stack)
+        this.element: element
+        this._lastKey: null
+        this._restoreState()
+
+    func reduced(expr)
+        self: this
+        self._reduced(expr)
+        self._reduced: (): self.element.throw_('Unexpected expr')
+        self._restoreState()
+
+    func _allowOpenParen(reduced)
+        self: this
+        self._push_openparen: (token):
+            self.stack.push(ExprAutomation(self.stack, token.line, Token(')', 'closeparen')))
+            self._reduced: reduced
+
+    func _restoreState()
+        self: this
+        self._forbidAll()
+        self._setFinishable()
+        self._push_value: (token): self.element.arg(eval(token.image), token.line)
+        self._push_ident: (token): self._pushKey(token)
+        self._push_shp: (): self._waitId()
+        self._push_dot: (): self._waitClass()
+        self._allowOpenParen((expr): self.element.argExpr(expr))
+
+    func _forbidAll()
+        this._push_ident: null
+        this._push_value: null
+        this._push_shp: null
+        this._push_dot: null
+        this._push_eq: null
+        this._push_openparen: null
+
+    func _setUnfinishable(expect)
+        self: this
+        self._finished: false
+        self.finish: (): self.element.throw_('Unexpected end of line, expect ' + expect)
+
+    func _setFinishable()
+        self: this
+        self._finished: true
+        self.finish: (): self._finishAndAppend(false)
+
+    func _finishAndAppend(lastKeyAsArg)
+        if lastKeyAsArg
+            this.element.arg(this._lastKey.image, this._lastKey.line)
+        super.finish()
+        if this.element.parent.children.length != 0
+            this.element.parent.lastChild().finish(this.stack.builder)
+        this.element.parent.append(this.element)
+        this.stack.onTagBegin(this.element)
+
+    func _pushKey(token)
+        self: this
+        self._forbidAll()
+        self._lastKey: token
+        self._push_eq: (): self._waitValue()
+        self._push_value: (token):
+            self.element.arg(self._lastKey.image, this._lastKey.line)
+            self.element.arg(eval(token.image), token.line)
+        self._push_ident: (token):
+            self.element.arg(self._lastKey.image, this._lastKey.line)
+            self._pushKey(token)
+        self.finish: (): self._finishAndAppend(true)
+
+    func _waitId()
+        self: this
+        self._forbidAll()
+        self._push_ident: (token):
+            self.element.setId(token.image, token.line)
+            self._restoreState()
+        self._setUnfinishable('ID')
+        self._allowOpenParen((expr): self.element.setIdExpr(expr))
+
+    func _waitClass()
+        self: this
+        self._forbidAll()
+        self._push_ident: (token):
+            self.element.addClass(token.image, token.line)
+            self._restoreState()
+        self._setUnfinishable('class')
+        self._allowOpenParen((expr): self.element.addClassExpr(expr))
+
+    func _waitValue()
+        self: this
+        self._forbidAll()
+        self._push_ident: (token):
+            self.element.attr(self._lastKey.image, token.image, token.line)
+            self._restoreState()
+        self._push_value: (token):
+            self.element.attr(self._lastKey.image, eval(token.image), token.line)
+            self._restoreState()
+        self._setUnfinishable('attribute value')
+        self._allowOpenParen((expr): self.element.attrExpr(self._lastKey.image, expr))
+
+    func finished()
+        return this._finished
+
+    func forceFinish()
+        ifnot this.finished()
+            this.element.throw_('Unexpected finish of tag')
+        this.finish()
+
+_TEXTBLOCK_OPT_FUNCS: {
+    left: {
+        trim: (am): (ln): ln.trimLeft(),
+        trunc: (am): (ln): ln[am.indentLevel, ],
+        keep: (am): (ln): ln,
+    },
+    right: {
+        trim: (am): (ln): ln.trimRight(),
+        keep: (am): (ln): ln,
+    },
+    escape: {
+        yes: escapeText,
+        no: (ln): ln,
+    },
+    eol: {
+        lf: '\n',
+        off: '',
+        br: '<br>',
+    },
+}
+
+class TextBlockAutomation: Automation
+    ctor(stack, appendPoint, line, indentLevel, escape) super(stack)
+        this.appendPoint: appendPoint
+        this.line: line
+        this.indentLevel: indentLevel
+        this._lines: []
+
+        this._props: {
+            left: false,
+            right: false,
+            escape: false,
+            eol: false,
+        }
+        this._funcs: {
+            left: _TEXTBLOCK_OPT_FUNCS.left.keep,
+            right: _TEXTBLOCK_OPT_FUNCS.right.trim,
+            escape: _TEXTBLOCK_OPT_FUNCS.escape['yes' if escape else 'no'],
+            eol: _TEXTBLOCK_OPT_FUNCS.eol.lf,
+        }
+        this._lastProp: null
+
+        this._waitProp()
+
+    func _waitProp()
+        self: this
+        self._push_ident: (token):
+            self._lastProp: token
+            self._push_dent: (token): token.unexpected()
+        self._push_eq: (token): self._waitValue()
+
+    func _waitValue()
+        self: this
+        self._push_eq: (token): token.unexpected()
+        self._push_ident: (token):
+            self._setValue(token)
+            self._waitProp()
+
+    func _setValue(token)
+        ifnot this._props.hasOwnProperty(this._lastProp.image)
+            this._lastProp.throw_('Unknown option for text block')
+        if this._props[this._lastProp.image]
+            this._lastProp.throw_('Duplicated option for text block')
+        this._props[this._lastProp.image]: true
+        f: _TEXTBLOCK_OPT_FUNCS[this._lastProp.image][token.image]
+        ifnot f
+            token.throw_('Invalid option value for text block')
+        this._funcs[this._lastProp.image]: f
+        this._lastProp: null
+
+    func addLine(string, lineno)
+        if this._lastProp != null
+            this._lastProp.throw_('Option not set for text block')
+        if string.trimLeft() = ':::'
+            return this.finish()
+        if this.indentLevel = undefined
+            this.indentLevel = indentLv(string)
+        this._lines.push(string)
+
+    func finish()
+        this.appendPoint.append(TextBlockElement(
+            this.appendPoint, this.stack.indentLevel, this.line, this._lines,
+            this._funcs.left(this), this._funcs.right(this),
+            this._funcs.escape, this._funcs.eol))
+        super.finish()
+
+    func finished()
+        return false
+
+class BootstrapAutomation: Automation
+    ctor(stack, appendPoint) super(stack)
+        this.appendPoint: appendPoint
+
+    func _push_ident(token)
+        this.stack.push(TagAutomation(this.stack, TagElement(
+            this.appendPoint, this.stack.indentLevel, token.line, token.image)))
+
+    func _push_text(token)
+        this.appendPoint.append(TextLineElement(
+            this.appendPoint, this.stack.indentLevel, token.line, token.image.slice(1)))
+
+    func _push_textblock(token)
+        this.stack.push(TextBlockAutomation(this.stack, this.appendPoint, token.line,
+                                            this.stack.indentLevel, true))
+
+    func _push_percentage(token)
+        this.stack.push(CtrlFlowAutomation(this.stack, this.appendPoint))
+
+class AutomationStack
+    ctor(appendPoint, indentLevel, builder)
+        this.indentLevel: indentLevel
+        this.stack: [BootstrapAutomation(this, appendPoint)]
+        this.builder: builder
+
+    func top()
+        return this.stack[this.stack.length - 1]
+
+    func push(a)
+        this.stack.push(a)
+        a.activated()
+
+    func pop()
+        return this.stack.pop()
+
+    func consume(tokens)
+        tokens |: this.top().push($)
+
+    func addLine(string, line)
+        this.top().addLine(string, line)
+
+    func tryFinish()
+        if this.stack.length = 0
+            return true
+        if this.top().finished()
+            this.top().finish()
+            return this.tryFinish()
+        return false
+
+    func forceFinish()
+        if this.stack.length != 0
+            this.top().forceFinish()
+            this.forceFinish()
+
+    func onTagBegin(element)
+        return this.builder.onTagBegin(element, this)
+
+# http://www.w3.org/TR/2011/WD-html-markup-20110113/syntax.html#void-element
+VOID_ELEMENTS: {
+    area: true,
+    base: true,
+    br: true,
+    col: true,
+    command: true,
+    embed: true,
+    hr: true,
+    img: true,
+    input: true,
+    keygen: true,
+    link: true,
+    meta: true,
+    param: true,
+    source: true,
+    track: true,
+    wbr: true,
+}
+
+ESCAPE_RE: /[<>'"&]/g
+
+class RenderOverrider
+    ctor(attrs)
+        this.attributes: attrs if attrs else {}
+        this.attributes['class']: null
+        this.classes: []
+        this.classesKeys: []
+        this.indentDelta: 0
+
+    func addClass(cls)
+        if this.classesKeys[cls]
+            return
+        this.classes.push(cls)
+        this.classesKeys[cls]: true
+        return this
+
+    func addClasses(cls)
+        cls |: this.addClass($)
+        return this
+
+    func buildClass(cls)
+        this.addClasses(cls)
+        return '' if this.classes.length = 0 else
+                (' class="' + this.classes.join(' ') + '"')
+
+    func allowAttrVal(v)
+        return v != null && v != undefined
+
+    func buildAttrs(elementAttrs)
+        elementAttrs |:
+            ifnot this.attributes.hasOwnProperty($k)
+                this.attributes[$k]: $
+        r: []
+        this.attributes |:
+            val: this.attributes[$k]
+            if this.allowAttrVal(val)
+                r.push(' ', $k, '=', JSON.stringify(val.toString()))
+        return r.join('')
+
+    func overrideAttr(key, value)
+        this.attributes[key]: value
+        return this
+
+    func ignoreAttr(key)
+        this.attributes[key]: null
+        return this
+
+    func ignoreAttrs(keys)
+        keys |: this.ignoreAttr($)
+        return this
+
+    func ignoreClass(key)
+        this.classesKey[key]: ''
+        return this
+
+    func ignoreClasses(keys)
+        keys |: this.ignoreClass($)
+        return this
+
+    func indentLevel(element)
+        return element.indentLevel + this.indentDelta
+
+func escapeText(s)
+    return s.replace(ESCAPE_RE, (r): '&#' + r.charCodeAt(0) + ';')
+
+export topaz.RenderOverrider: RenderOverrider
+
+INDENT_RE: *RegExp('^[ ]*')
+
+func indentLv(string)
+    return INDENT_RE.exec(string)[0].length
+
+func _findFuncName(prefix, tag)
+    return prefix + tag.replace(/-/g, '_')
+
+class Builder
+    ctor(variables)
+        this.variables: variables if variables else {}
+        this.reset()
+
+    func reset()
+        this.lines: 0
+        this._root: FakeRoot()
+        this._stack: null
+
+    func getElements()
+        return this._root.children
+
+    func buildAndRenderText(text)
+        return this.applyAndRender(this.buildTextToElements(text))
+
+    func buildTextToElements(text)
+        text.split('\n') |: this.addLine($)
+        this.finish()
+        r: this.getElements()
+        this.reset()
+        return r
+
+    func applyVariablesTo(elements)
+        root: FakeRoot()
+        elements |: root.append($.applyVariables(root, this))
+        return root.children
+
+    func applyVariablesToOwn()
+        return this.applyVariablesTo(this.getElements())
+
+    func renderApplied(elements)
+        return (elements |: $.render(this)).join(this.eol())
+
+    func applyAndRender(elements)
+        return this.renderApplied(this.applyVariablesTo(elements))
+
+    func applyAndRenderOwn(elements)
+        return this.applyAndRender(this.getElements())
+
+    func getAppendPoint(indentLevel)
+        return this._root.getAppendPoint(indentLevel)
+
+    func _initStackIfNull(indentLevel)
+        self: this
+        func applyStack()
+            self._stack: AutomationStack(
+                self.getAppendPoint(indentLevel), indentLevel, self)
+
+        if this._stack = null
+            return applyStack()
+        if indentLevel < this._stack.indentLevel
+            this._stack.forceFinish()
+            return applyStack()
+
+    func addLine(string)
+        this.lines: this.lines + 1
+        return this.addLineWithLevel(string, indentLv(string))
+
+    func addLineWithLevel(string, indentLevel)
+        this._initStackIfNull(indentLevel)
+        this._stack.addLine(string, this.lines)
+        if this._stack.tryFinish()
+            this._stack: null
+
+    func finish()
+        if this._stack
+            this._stack.forceFinish()
+        this._root.finish(this)
+
+    func onTagBegin(element, stack)
+        f: _findFuncName('_ontagbegin_', element.tag)
+        if this[f]
+            this[f](element, stack)
+
+    func onTagEnd(element)
+        f: _findFuncName('_ontagend_', element.tag)
+        if this[f]
+            this[f](element)
+
+    func duplicateStr(s, times)
+        if !times
+            return ''
+        return Array(times + 1).join(s)
+
+    func indent(indentLevel)
+        return this.duplicateStr(' ', indentLevel)
+
+    func eol()
+        return '\n'
+
+    func renderTextLine(element, o, esc)
+        return this.indent(element.indentLevel) + esc(element.text)
+
+    func renderTextBlock(element)
+        return (element.lines |: element.right(element.left(element.escape($)))).join(element.eol)
+
+    func renderTag(element)
+        f: _findFuncName('_rendertag_', element.tag)
+        if this[f]
+            return this[f](element)
+        if VOID_ELEMENTS[element.tag]
+            element.checkNoChildren()
+            return this.renderVoid(element.tag, element, RenderOverrider())
+        return this.renderNonvoid(element.tag, element, RenderOverrider())
+
+    func renderNonvoid(tag, element, overrider)
+        return ([this.openTag(tag, element, overrider)] ++
+                (element.children |: $.render(this)) ++
+                [this.closeTag(tag, overrider.indentLevel(element))]
+               ).join(this.eol())
+
+    func renderVoid(tag, element, overrider)
+        return this.openTag(tag, element, overrider)
+
+    func renderInline(tag, element, overrider)
+        return this.openTag(tag, element, overrider) + this.closeTag(tag)
+
+    func renderInlineWithText(tag, element, text, overrider)
+        return this.openTag(tag, element, overrider) + text + this.closeTag(tag)
+
+    func openTag(tag, elm, ovrd)
+        return this.indent(ovrd.indentLevel(elm)) + '<' + tag +
+            ovrd.buildClass(elm.classes) + ovrd.buildAttrs(elm.attributes) + '>'
+
+    func closeTag(tag, indentLevel)
+        return this.indent(indentLevel) + '</' + tag + '>'
+
+    func setRenderFunc(tagname, f)
+        self: this
+        self[_findFuncName('_rendertag_', tagname)]: (element): f(element, self)
+
+    func getValue(name)
+        return this.variables[name]
+
+    func setValue(name, value)
+        this.variables[name]: value
+
+    func resetVariables(variables)
+        this.variables: variables
+
+class HTMLBasisBuilder: Builder
+    ctor(variables) super(variables)
+        0
+
+    func _pushTextReceiver(stack, element)
+        class ActiveTextBlockAutomation: TextBlockAutomation
+            ctor() super(stack, element, element.line)
+                self: this
+                self.addLine: (s): self._add1stLine(s)
+
+            func _add1stLine(string)
+                self: this
+                indent: indentLv(string)
+                if indent < element.indentLevel
+                    element.throw_('Invalid content indent level')
+                self._lines.push(string)
+                self.stack.indentLevel: indent
+                self.addLine: (s): self._addLine(s)
+
+            func _addLine(string)
+                this._lines.push(string)
+
+        stack.push(ActiveTextBlockAutomation())
+
+    func _ontagbegin_js(element, stack)
+        this._pushTextReceiver(stack, element)
+        element.tag: 'script'
+        element.attributes.type: LiteralValue(element.line, 'text/javascript')
+
+    func _ontagbegin_css(element, stack)
+        this._pushTextReceiver(stack, element)
+        element.tag: 'style'
+
+    func _rendertag_html5(element)
+        return (['<!doctype html>',
+                 this.openTag('html', element, RenderOverrider())] ++
+                (element.children |: $.render(this))).join(this.eol())
+
+    func _rendertag_charset(element)
+        element.checkNoChildren()
+        charset: element.getOnlyArg(element, 'charset')
+        if element.parent && element.parent.parent && element.parent.parent.tag = 'html5'
+            return this.renderVoid('meta', element, RenderOverrider({charset: charset}))
+        return this.renderVoid('meta', element, RenderOverrider({
+            'http-equiv': 'Content-Type',
+            content: 'text/html; charset=' + charset,
+        }))
+
+    func _rendertag_jsfile(element)
+        element.checkNoChildren()
+        file: element.getOnlyArg(element, 'file')
+        return this.renderInline('script', element, RenderOverrider({
+            type: 'text/javascript',
+            src: file,
+        }))
+
+    func _rendertag_cssfile(element)
+        element.checkNoChildren()
+        file: element.getOnlyArg(element, 'file')
+        return this.renderVoid('link', element, RenderOverrider({
+            rel: 'stylesheet',
+            type: 'text/css',
+            href: file,
+        }))
+
+func renderHTMLBasis(text, variables)
+    return HTMLBasisBuilder(variables).buildAndRenderText(text)
+
+export topaz.Builder: Builder
+export topaz.HTMLBasisBuilder: HTMLBasisBuilder
+export topaz.renderHTMLBasis: renderHTMLBasis
+
+# Bootstrap & Font-awesome builder
+
+class BootstrapFontawesomeBuilder: HTMLBasisBuilder
+    ctor(variables) super(variables)
+        0
+
+    func _firstOrCreate(parent, elements, tag, throwMsg)
+        if elements.length = 0
+            return TagElement(parent, parent.indentLevel + 1, parent.line, tag)
+        e: elements[0]
+        if elements.length > 1 && throwMsg
+            elements[1].throw_(throwMsg)
+        return e
+
+    func _firstOrNull(elements, throwMsg)
+        if elements.length = 0
+            return null
+        e: elements[0]
+        if elements.length > 1 && throwMsg
+            elements[1].throw_(throwMsg)
+        return e
+
+    func _ontagend_modal(element)
+        dialog: TagElement(element, element.indentLevel + 1, element.line, 'div')
+        dialog.addClass('modal-dialog')
+        content: TagElement(dialog, dialog.indentLevel + 1, dialog.line, 'div')
+        content.addClass('modal-content')
+        dialog.append(content)
+
+        head: this._firstOrCreate(content, element.sliceChildren('head'), 'div',
+                                  'more than 1 heads for modal')
+        head.addClass('modal-header')
+        content.append(head)
+
+        body: this._firstOrCreate(content, element.sliceChildren('body'), 'div',
+                                  'more than 1 bodies for modal')
+        body.addClass('modal-body')
+        content.append(body)
+
+        closeBtn: TagElement(head, head.indentLevel + 1, head.line, 'button')
+        closeBtn.addClass('close')
+        closeBtn.attr('type', 'button')
+        closeBtn.attr('data-dismiss', 'modal')
+        closeBtn.append(TextLineElement(closeBtn, closeBtn.indentLevel + 1, closeBtn.line, '&times;', (a): a))
+        head.append(closeBtn)
+        title: this._firstOrNull(element.sliceChildren('title'), 'more than 1 titles for modal')
+        if title != null
+            title.tag: 'h4'
+            title.addClass('modal-title')
+            head.append(title)
+        element.children |: body.append($)
+
+        element.children: []
+        element.append(dialog)
+
+    func _rendertag_icon(element)
+        element.checkNoChildren()
+        icon: element.getOnlyArg(element, 'icon')
+        return this.renderInline('i', element, RenderOverrider().addClasses(['fa', 'fa-' + icon]))
+
+    func _createInputOvr(element)
+        o: RenderOverrider()
+        if element.argsKey.disabled || element.attributes.disabled
+            o.overrideAttr('disabled', 'disabled')
+        return o
+
+    func _createBtnOvr(element)
+        color: element.attributes.color if element.attributes.color else 'default'
+        return (this._createInputOvr(element)
+            .ignoreAttr('color').addClasses(['btn', 'btn-' + color])
+            .overrideAttr('type', element.attributes.type if element.attributes.type else 'button')
+        )
+
+    func _rendertag_btn(element)
+        return this.renderNonvoid('button', element, this._createBtnOvr(element))
+
+    func _rendertag_container(element)
+        return this.renderNonvoid(
+            'div', element, RenderOverrider().addClasses(['container']))
+
+    func _rendertag_form_h(element)
+        return this.renderNonvoid(
+            'form', element, RenderOverrider()
+                                .addClasses(['form-horizontal', 'form-submit']))
+
+    func _createFormCtlOvr(element)
+        return this._createInputOvr(element).addClass('form-control')
+
+    func _rendertag_input(element)
+        return this.renderVoid('input', element,
+                               this._createFormCtlOvr(element)
+                                        .overrideAttr('type', 'text'))
+
+    func _rendertag_passwd(element)
+        return this.renderVoid('input', element,
+                               this._createFormCtlOvr(element)
+                                        .overrideAttr('type', 'password'))
+
+    func _rendertag_textarea(element)
+        return this.renderNonvoid('textarea', element, this._createFormCtlOvr(element))
+
+    func _rendertag_select(element)
+        return this.renderNonvoid('select', element, this._createFormCtlOvr(element))
+
+    func _renderInputBox(element)
+        self: this
+
+        func inline()
+            r: []
+            label: AppliedTagElement(element.parent, element.indentLevel, element.line, 'label')
+            label.addClass(element.tag + '-inline')
+            input: AppliedTagElement(label, label.indentLevel + 1
+                                            if element.children.length = 0
+                                            else element.children[0].indentLevel,
+                                     element.line, 'input')
+            input.attributes: element.attributes
+            input.classes: element.classes
+            r.push(self.openTag('label', label, RenderOverrider()))
+            r.push(self.openTag('input', input,
+                                self._createInputOvr(element)
+                                        .overrideAttr('type', element.tag)))
+            element.children |: r.push($.render(self))
+            r.push(self.closeTag('label', label.indentLevel))
+            return r.join(self.eol())
+
+        func block()
+            r: []
+            root: AppliedTagElement(element.parent, element.indentLevel, element.line, 'div')
+            root.addClass(element.tag)
+            if element.argsKey.disabled
+                root.addClass('disabled')
+            label: AppliedTagElement(element.parent, root.indentLevel + 1, element.line, 'label')
+            input: AppliedTagElement(label, label.indentLevel + 1
+                                            if element.children.length = 0
+                                            else element.children[0].indentLevel,
+                                     element.line, 'input')
+            input.attributes: element.attributes
+            input.classes: element.classes
+            r.push(self.openTag('div', root, RenderOverrider()))
+            r.push(self.openTag('label', label, RenderOverrider()))
+            r.push(self.openTag('input', input,
+                                self._createInputOvr(element)
+                                        .overrideAttr('type', element.tag)))
+            element.children |: r.push($.render(self))
+            r.push(self.closeTag('label', label.indentLevel))
+            r.push(self.closeTag('div', root.indentLevel))
+            return r.join(self.eol())
+
+        return inline() if element.argsKey.inline else block()
+
+    func _rendertag_checkbox(element)
+        return this._renderInputBox(element)
+
+    func _rendertag_radio(element)
+        return this._renderInputBox(element)
+
+    func _rendertag_row(element)
+        cls: 'form-group' if element.parent.isTag('form') ||
+                             element.parent.isTag('form-h') else 'row'
+        return this.renderNonvoid('div', element, RenderOverrider().addClass(cls))
+
+    func _gridSizeOffsetOvr(element)
+        o: RenderOverrider().ignoreAttrs(['size', 'offset'])
+        if element.attributes.size > 0
+            o.addClass('col-sm-' + element.attributes.size)
+        else
+            o.addClass('col-sm-4')
+        if element.attributes.offset > 0
+            o.addClass('col-sm-offset-' + element.attributes.offset)
+        return o
+
+    func _rendertag_grid(element)
+        return this.renderNonvoid('div', element, this._gridSizeOffsetOvr(element))
+
+    func _rendertag_grid_s(element)
+        return this.renderNonvoid('label', element, this._gridSizeOffsetOvr(
+                    element).addClass('form-control-static'))
+
+    func _rendertag_grid_c(element)
+        return this.renderNonvoid('label', element, this._gridSizeOffsetOvr(
+                    element).addClass('control-label'))
+
+    func _rendertag_lbl(element)
+        color: element.attributes.color if element.attributes.color else 'default'
+        return this.renderNonvoid('span', element,
+                                  RenderOverrider().ignoreAttr('color')
+                                                   .addClasses(['label', 'label-' + color]))
+
+    func _rendertag_modal(element)
+        r: []
+        o: RenderOverrider({
+            role: 'dialog',
+            tabindex: '-1',
+            'aria-labelledby': '',
+            'aria-hidden': 'true',
+        }).ignoreAttr('size').addClasses(['modal', 'fade'])
+        size: 'modal-' + (element.attributes.size if element.attributes.size else 'lg')
+        r.push(this.openTag('div', element, o))
+        r.push(this.renderNonvoid('div', element.children[0],
+                                  RenderOverrider().addClasses(['modal-dialog', size])))
+        r.push(this.closeTag('div', element.indentLevel))
+        return r.join(this.eol())
+
+    func _rendertag_modal_toggle(element)
+        return this.renderNonvoid('button', element, this._createBtnOvr(element)
+                .overrideAttr('data-target', '#' + element.attributes.target)
+                .overrideAttr('data-toggle', 'modal')
+        )
+
+func renderBootstrap(text, variables)
+    return BootstrapFontawesomeBuilder(variables).buildAndRenderText(text)
+
+export topaz.BootstrapFontawesomeBuilder: BootstrapFontawesomeBuilder
+export topaz.renderBootstrap: renderBootstrap
+
+export topaz.__version__: '0.1.0 2015-12-31 Experimental'
