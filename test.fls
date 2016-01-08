@@ -1,5 +1,5 @@
 assert: require('assert')
-core: require('./topaz').topaz
+core: require('./topaz')
 
 func renderHTML(elements, variables)
     return core.HTMLBasisBuilder(variables).applyAndRender(elements)
@@ -66,8 +66,7 @@ if true
         ], builder.triggers)
     )
 
-    if true
-        it('build & apply', %)
+    it('build & apply', ():
         builder: core.HTMLBasisBuilder()
         builder.addLine('input#q.x type=text disabled')
         builder.finish()
@@ -82,7 +81,19 @@ if true
         assert.strictEqual(1, e.args.length)
         assert.strictEqual('disabled', e.args[0].value)
 
-        applied: e.applyVariables(null, core.Builder())
+        class TestBuilder: core.HTMLBasisBuilder
+            ctor() super()
+                this.triggers: []
+
+            func onTagApplied(element)
+                this.triggers.push({
+                    tag: element.tag,
+                    parent: null if element.parent = null else element.parent.tag,
+                })
+                return element
+
+        testBuilder: TestBuilder()
+        applied: e.applyVariables(null, testBuilder)
         assert.strictEqual('input', applied.tag)
         assert.strictEqual('q', applied.attributes.id)
         assert.strictEqual('text', applied.attributes.type)
@@ -98,6 +109,12 @@ if true
         assert.strictEqual('x', e.classes[0].value)
         assert.strictEqual(1, e.args.length)
         assert.strictEqual('disabled', e.args[0].value)
+
+        assert.deepEqual([{
+            tag: 'input',
+            parent: null,
+        }], testBuilder.triggers)
+    )
 
     if true
         it('render simple', %)
@@ -164,7 +181,8 @@ if true
       Hello Topaz
     </title>
     <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.css">
-    <script type="text/javascript" src="/static/js/jquery.js"></script>
+    <script type="text/javascript" src="/static/js/jquery.js">
+    </script>
     <script type="text/javascript">
       $(document).ready(function() {
         console.log("hello, world <3")
@@ -194,7 +212,8 @@ if true
       Hello Topaz
     </title>
     <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.css">
-    <script type="text/javascript" src="/static/js/jquery.js"></script>
+    <script type="text/javascript" src="/static/js/jquery.js">
+    </script>
     <script type="text/javascript">
       $(document).ready(function() {
         console.log("hello, world <3")
@@ -395,8 +414,7 @@ if true
         assert.strictEqual('input', applied_.children[1].tag)
         assert.strictEqual('acd', applied_.children[1].attributes.value)
 
-    if true
-        it('compound conditions', %)
+    it('compound conditions', ():
         builder: core.HTMLBasisBuilder()
         builder.addLine('''div''')
         builder.addLine('''  % if !-x.val < y.val || !u.val && v.val''')
@@ -411,25 +429,60 @@ if true
         elements: builder.getElements()
         assert.strictEqual(1, elements.length)
 
-        applied_zptf: elements[0].applyVariables(null, core.Builder({
+        class TestBuilder: core.HTMLBasisBuilder
+            ctor(v) super(v)
+                this.triggers: []
+
+            func onTagApplied(element)
+                this.triggers.push({
+                    tag: element.tag,
+                    parent: null if element.parent = null else element.parent.tag,
+                })
+                return element
+
+        zptf_builder: TestBuilder({
             x: {val: 0},
             y: {val: 1},
             u: {val: true},
             v: {val: false},
-        }))
+        })
+        applied_zptf: elements[0].applyVariables(null, zptf_builder)
         assert.strictEqual(2, applied_zptf.children.length)
         assert.strictEqual('i', applied_zptf.children[0].tag)
         assert.strictEqual('p', applied_zptf.children[1].tag)
 
-        applied_zmtf: elements[0].applyVariables(null, core.Builder({
+        assert.deepEqual([{
+            tag: 'i',
+            parent: 'div',
+        }, {
+            tag: 'p',
+            parent: 'div',
+        }, {
+            tag: 'div',
+            parent: null,
+        }], zptf_builder.triggers)
+
+        zmtf_builder: TestBuilder({
             x: {val: 0},
             y: {val: -1},
             u: {val: true},
             v: {val: false},
-        }))
+        })
+        applied_zmtf: elements[0].applyVariables(null, zmtf_builder)
         assert.strictEqual(2, applied_zmtf.children.length)
         assert.strictEqual('span', applied_zmtf.children[0].tag)
         assert.strictEqual('p', applied_zmtf.children[1].tag)
+
+        assert.deepEqual([{
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'p',
+            parent: 'div',
+        }, {
+            tag: 'div',
+            parent: null,
+        }], zmtf_builder.triggers)
 
         applied_zmtt: elements[0].applyVariables(null, core.Builder({
             x: {val: 0},
@@ -480,6 +533,7 @@ if true
         assert.strictEqual(2, applied_zmft.children.length)
         assert.strictEqual('span', applied_zmft.children[0].tag)
         assert.strictEqual('p', applied_zmft.children[1].tag)
+    )
 
     if true
         it('numeric property', %)
@@ -490,6 +544,46 @@ if true
         EXPECT: '<input value="0">'
 
         assert.strictEqual(EXPECT, renderHTML(builder.getElements()))
+
+    it('list applied', ():
+        b: core.HTMLBasisBuilder()
+        b.addLine('''div''')
+        b.addLine('''  % for i in x''')
+        b.addLine('''    span#i''')
+        b.finish()
+        elements: b.getElements()
+        assert.strictEqual(1, elements.length)
+
+        class TestBuilder: core.HTMLBasisBuilder
+            ctor(v) super(v)
+                this.triggers: []
+
+            func onTagApplied(element)
+                this.triggers.push({
+                    tag: element.tag,
+                    parent: null if element.parent = null else element.parent.tag,
+                })
+                return element
+
+        builder: TestBuilder({
+            x: ['a', 'b', 'c'],
+        })
+        elements[0].applyVariables(null, builder)
+
+        assert.deepEqual([{
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'div',
+            parent: null,
+        }], builder.triggers)
+    )
 
     if true
         it('list', %)
@@ -974,7 +1068,7 @@ if true
 <div class="container">
     <div class="row">
         <div class="col-sm-4 col-sm-offset-2">
-            <input class="form-control" disabled="disabled" type="text" id="myInput" placeholder="hello-world">
+            <input class="form-control" id="myInput" placeholder="hello-world" type="text" disabled="disabled">
         </div>
     </div>
 </div>
@@ -1002,7 +1096,8 @@ if true
             <span class="label label-default" id="myLab">
                 Default
             </span>
-            <i class="fa fa-user"></i>
+            <i class="fa fa-user">
+            </i>
             <span class="label label-info">
                 Info
             </span>
@@ -1028,15 +1123,17 @@ if true
 
         EXPECT: '''
 <div class="form-horizontal">
-    <i class="fa fa-user"></i>
+    <i class="fa fa-user">
+    </i>
 </div>
 <form class="form-horizontal form-submit">
     <div class="form-group">
         <div class="col-sm-2">
-            <i class="fa fa-file-o"></i>
+            <i class="fa fa-file-o">
+            </i>
         </div>
         <div class="col-sm-4 col-sm-offset-2">
-            <input class="form-control" disabled="disabled" type="text" id="myInput" placeholder="hello-world">
+            <input class="form-control" id="myInput" placeholder="hello-world" type="text" disabled="disabled">
         </div>
     </div>
 </form>
@@ -1057,10 +1154,10 @@ if true
         EXPECT: '''
 <form class="form-horizontal form-submit">
     <div class="form-group">
-        <label class="col-sm-2 control-label">
+        <label class="control-label col-sm-2">
             Count
         </label>
-        <label class="col-sm-8 form-control-static">
+        <label class="form-control-static col-sm-8">
             91
         </label>
     </div>
@@ -1107,7 +1204,8 @@ if true
 <label class="radio-inline">
   <input type="radio">
   Radio
-  <i class="fa fa-user"></i>
+  <i class="fa fa-user">
+  </i>
 </label>
         '''.trim()
 
@@ -1131,10 +1229,10 @@ if true
   <button class="btn btn-default" type="button">
     A
   </button>
-  <button class="btn btn-default" type="button" onclick="alert(0)">
+  <button class="btn btn-default" onclick="alert(0)" type="button">
     B
   </button>
-  <button class="btn btn-info disable-btn" type="button">
+  <button class="disable-btn btn btn-info" type="button">
     C
   </button>
   <button id="myBtn">
@@ -1205,6 +1303,20 @@ if true
         assert.strictEqual(EXPECT_B, renderBsf(builder.getElements()), 'B')
 
     if true
+        it('modals toggle', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        builder.addLine('modal-toggle#ii color=info target=abc')
+        builder.addLine('  :Def')
+        builder.finish()
+
+        EXPECT: '''
+<button class="btn btn-info" id="ii" data-target="#abc" data-toggle="modal" type="button">
+  Def
+</button>
+        '''.trim()
+        assert.strictEqual(EXPECT, renderBsf(builder.getElements()))
+
+    if true
         it('nested branches', %)
         text: '''
 div
@@ -1227,7 +1339,7 @@ p
   <span>
         Count
   </span>
-  <input class="form-control" type="text" value="0">
+  <input class="form-control" value="0" type="text">
 </div>
 <p>
   Quick brown fox.
@@ -1252,7 +1364,8 @@ p
 
         assert.strictEqual('''
 <div>
-  <i class="fa fa-user"></i>
+  <i class="fa fa-user">
+  </i>
 </div>
 <p>
   Quick brown fox.
@@ -1265,7 +1378,8 @@ p
 
         assert.strictEqual('''
 <div>
-  <i class="fa fa-user-plus"></i>
+  <i class="fa fa-user-plus">
+  </i>
 </div>
 <p>
   Quick brown fox.

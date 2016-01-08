@@ -331,11 +331,17 @@ class AppliedTagElement: TagElementBase
     func addClass(cls)
         this.classes.push(cls)
 
-    func applyVariables(p, c)
+    func applyVariables(p, builder)
         return this
 
     func render(r)
         return r.renderTag(this)
+
+    func replaceTag(tagName)
+        e: AppliedTagElement(this.parent, this.indentLevel, this.line, tagName)
+        this.classes |: e.addClass($)
+        this.children |: e.append($)
+        return e
 
 class TagElement: TagElementBase
     ctor(parent, indentLevel, line, tag) super(parent, indentLevel, line, tag)
@@ -397,7 +403,7 @@ class TagElement: TagElementBase
             if r
                 element.addClass(r)
         this.children |: element.append($.applyVariables(element, builder))
-        return element
+        return builder.onTagApplied(element)
 
 class TextBase: ElementBase
     ctor(parent, indentLevel, line) super(parent, indentLevel, line)
@@ -586,12 +592,6 @@ class ExprAutomationBase: DynamicDataAutomationBase
     func finished()
         return false
 
-func makeExprListAutomation(stack, line, closer)
-    return ExprListAutomation(stack, line, closer)
-
-func makeConditionalExprAutomation(stack, line, consq)
-    return ConditionalExprAutomation(stack, line, consq)
-
 class ExprAutomation: ExprAutomationBase
     ctor(stack, line, closeToken) super(stack, closeToken)
         this._needFactor: true
@@ -691,7 +691,7 @@ class ExprAutomation: ExprAutomationBase
     func _push_openbracket(token)
         closerTk: Token(']', 'closebracket')
         if this._needFactor
-            return this.stack.push(makeExprListAutomation(this.stack, token.line, closerTk))
+            return this.stack.push(ExprListAutomation(this.stack, token.line, closerTk))
         this.stack.push(ExprAutomation(this.stack, token.line, closerTk))
         this.needFactor: false
         self: this
@@ -709,7 +709,7 @@ class ExprAutomation: ExprAutomationBase
             token.unexpected()
         this._reduceBinary(-1)
         e: this._exprStack.pop()
-        this.stack.push(makeConditionalExprAutomation(this.stack, token.line, e))
+        this.stack.push(ConditionalExprAutomation(this.stack, token.line, e))
         self: this
         self.reduced: (expr): self._pushValue(expr)
 
@@ -1163,71 +1163,8 @@ VOID_ELEMENTS: {
 
 ESCAPE_RE: /[<>'"&]/g
 
-class RenderOverrider
-    ctor(attrs)
-        this.attributes: attrs if attrs else {}
-        this.attributes['class']: null
-        this.classes: []
-        this.classesKeys: []
-        this.indentDelta: 0
-
-    func addClass(cls)
-        if this.classesKeys[cls]
-            return
-        this.classes.push(cls)
-        this.classesKeys[cls]: true
-        return this
-
-    func addClasses(cls)
-        cls |: this.addClass($)
-        return this
-
-    func buildClass(cls)
-        this.addClasses(cls)
-        return '' if this.classes.length = 0 else
-                (' class="' + this.classes.join(' ') + '"')
-
-    func allowAttrVal(v)
-        return v != null && v != undefined
-
-    func buildAttrs(elementAttrs)
-        elementAttrs |:
-            ifnot this.attributes.hasOwnProperty($k)
-                this.attributes[$k]: $
-        r: []
-        this.attributes |:
-            val: this.attributes[$k]
-            if this.allowAttrVal(val)
-                r.push(' ', $k, '=', JSON.stringify(val.toString()))
-        return r.join('')
-
-    func overrideAttr(key, value)
-        this.attributes[key]: value
-        return this
-
-    func ignoreAttr(key)
-        this.attributes[key]: null
-        return this
-
-    func ignoreAttrs(keys)
-        keys |: this.ignoreAttr($)
-        return this
-
-    func ignoreClass(key)
-        this.classesKey[key]: ''
-        return this
-
-    func ignoreClasses(keys)
-        keys |: this.ignoreClass($)
-        return this
-
-    func indentLevel(element)
-        return element.indentLevel + this.indentDelta
-
 func escapeText(s)
     return s.replace(ESCAPE_RE, (r): '&#' + r.charCodeAt(0) + ';')
-
-export topaz.RenderOverrider: RenderOverrider
 
 INDENT_RE: *RegExp('^[ ]*')
 
@@ -1317,13 +1254,29 @@ class Builder
         if this[f]
             this[f](element)
 
-    func duplicateStr(s, times)
+    func onTagApplied(element)
+        f: _findFuncName('_applied_', element.tag)
+        return this[f](element) if this[f] else element
+
+    func setAppliedFunc(tagname, f)
+        self: this
+        self[_findFuncName('_applied_', tagname)]: (element): f(element, self)
+
+    func overrideAttrs(src, dst, overrides, ignore)
+        src.attributes |:
+            if overrides.hasOwnProperty($k)
+                continue
+            ifnot ignore[$k]
+                dst.attr($k, $)
+        overrides |: dst.attr($k, $)
+
+    func repeatStr(s, times)
         if !times
             return ''
         return Array(times + 1).join(s)
 
     func indent(indentLevel)
-        return this.duplicateStr(' ', indentLevel)
+        return this.repeatStr(' ', indentLevel)
 
     func eol()
         return '\n'
@@ -1340,27 +1293,36 @@ class Builder
             return this[f](element)
         if VOID_ELEMENTS[element.tag]
             element.checkNoChildren()
-            return this.renderVoid(element.tag, element, RenderOverrider())
-        return this.renderNonvoid(element.tag, element, RenderOverrider())
+            return this.renderVoid(element.tag, element)
+        return this.renderNonvoid(element.tag, element)
 
-    func renderNonvoid(tag, element, overrider)
-        return ([this.openTag(tag, element, overrider)] ++
+    func renderNonvoid(tag, element)
+        return ([this.openTag(tag, element)] ++
                 (element.children |: $.render(this)) ++
-                [this.closeTag(tag, overrider.indentLevel(element))]
+                [this.closeTag(tag, element.indentLevel)]
                ).join(this.eol())
 
-    func renderVoid(tag, element, overrider)
-        return this.openTag(tag, element, overrider)
+    func renderVoid(tag, element)
+        return this.openTag(tag, element)
 
-    func renderInline(tag, element, overrider)
-        return this.openTag(tag, element, overrider) + this.closeTag(tag)
+    func renderInline(tag, element)
+        return this.openTag(tag, element) + this.closeTag(tag)
 
-    func renderInlineWithText(tag, element, text, overrider)
-        return this.openTag(tag, element, overrider) + text + this.closeTag(tag)
+    func renderInlineWithText(tag, element, text)
+        return this.openTag(tag, element) + text + this.closeTag(tag)
 
-    func openTag(tag, elm, ovrd)
-        return this.indent(ovrd.indentLevel(elm)) + '<' + tag +
-            ovrd.buildClass(elm.classes) + ovrd.buildAttrs(elm.attributes) + '>'
+    func renderClasses(cls)
+        return '' if cls.length = 0 else (' class="' + cls.join(' ') + '"')
+
+    func renderAttrs(attrs)
+        return (attrs |:
+            if $ != null && $ != undefined
+                $result.push(' ', $k, '=', JSON.stringify($.toString()))
+        ).join('')
+
+    func openTag(tag, elm)
+        return this.indent(elm.indentLevel) + '<' + tag +
+            this.renderClasses(elm.classes) + this.renderAttrs(elm.attributes) + '>'
 
     func closeTag(tag, indentLevel)
         return this.indent(indentLevel) + '</' + tag + '>'
@@ -1412,43 +1374,47 @@ class HTMLBasisBuilder: Builder
         element.tag: 'style'
 
     func _rendertag_html5(element)
-        return (['<!doctype html>',
-                 this.openTag('html', element, RenderOverrider())] ++
+        return (['<!doctype html>', this.openTag('html', element)] ++
                 (element.children |: $.render(this))).join(this.eol())
 
-    func _rendertag_charset(element)
+    func _applied_charset(element)
         element.checkNoChildren()
+        meta: element.replaceTag('meta')
         charset: element.getOnlyArg(element, 'charset')
-        if element.parent && element.parent.parent && element.parent.parent.tag = 'html5'
-            return this.renderVoid('meta', element, RenderOverrider({charset: charset}))
-        return this.renderVoid('meta', element, RenderOverrider({
+        if element.parent && element.parent.parent && element.parent.parent.isTag('html5')
+            this.overrideAttrs(element, meta, {charset: charset}, {})
+            return meta
+        this.overrideAttrs(element, meta, {
             'http-equiv': 'Content-Type',
             content: 'text/html; charset=' + charset,
-        }))
+        }, {})
+        return meta
 
-    func _rendertag_jsfile(element)
+    func _applied_jsfile(element)
         element.checkNoChildren()
-        file: element.getOnlyArg(element, 'file')
-        return this.renderInline('script', element, RenderOverrider({
+        script: element.replaceTag('script')
+        this.overrideAttrs(element, script, {
             type: 'text/javascript',
-            src: file,
-        }))
+            src: element.getOnlyArg(element, 'file'),
+        }, {})
+        return script
 
-    func _rendertag_cssfile(element)
+    func _applied_cssfile(element)
         element.checkNoChildren()
-        file: element.getOnlyArg(element, 'file')
-        return this.renderVoid('link', element, RenderOverrider({
+        link: element.replaceTag('link')
+        this.overrideAttrs(element, link, {
             rel: 'stylesheet',
             type: 'text/css',
-            href: file,
-        }))
+            href: element.getOnlyArg(element, 'file'),
+        }, {})
+        return link
 
 func renderHTMLBasis(text, variables)
     return HTMLBasisBuilder(variables).buildAndRenderText(text)
 
-export topaz.Builder: Builder
-export topaz.HTMLBasisBuilder: HTMLBasisBuilder
-export topaz.renderHTMLBasis: renderHTMLBasis
+export Builder: Builder
+export HTMLBasisBuilder: HTMLBasisBuilder
+export renderHTMLBasis: renderHTMLBasis
 
 # Bootstrap & Font-awesome builder
 
@@ -1456,9 +1422,107 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
     ctor(variables) super(variables)
         0
 
+    func overrideAttrsAsInput(src, dst, overrides, ignore)
+        ignore.disabled: true
+        this.overrideAttrs(src, dst, overrides, ignore)
+        if src.argsKey.disabled || src.attributes.disabled
+            dst.attr('disabled', 'disabled')
+
+    func overrideAttrsAsBtn(src, dst, overrides, ignore)
+        ignore.color: true
+        overrides.type: src.attributes.type if src.attributes.type else 'button'
+        this.overrideAttrsAsInput(src, dst, overrides, ignore)
+        dst.addClass('btn')
+        dst.addClass('btn-' + (src.attributes.color if src.attributes.color else 'default'))
+
+    func _applied_btn(element)
+        btn: element.replaceTag('button')
+        this.overrideAttrsAsBtn(element, btn, {}, {})
+        return btn
+
+    func overrideAttrsAsFormCtl(src, dst, overrides, ignore)
+        this.overrideAttrsAsInput(src, dst, overrides, ignore)
+        dst.addClass('form-control')
+
+    func _applied_input(element)
+        i: element.replaceTag('input')
+        this.overrideAttrsAsFormCtl(element, i, {type: 'text'}, {})
+        return i
+
+    func _applied_passwd(element)
+        i: element.replaceTag('input')
+        this.overrideAttrsAsFormCtl(element, i, {type: 'password'}, {})
+        return i
+
+    func _applied_textarea(element)
+        i: element.replaceTag('textarea')
+        this.overrideAttrsAsFormCtl(element, i, {}, {})
+        return i
+
+    func _applied_select(element)
+        i: element.replaceTag('select')
+        this.overrideAttrsAsFormCtl(element, i, {}, {})
+        return i
+
+    func _checkBoxApplied(element)
+        self: this
+
+        func inline()
+            label: AppliedTagElement(element.parent, element.indentLevel, element.line, 'label')
+            label.addClass(element.tag + '-inline')
+            input: element.replaceTag('input')
+            input.indentLevel: label.indentLevel + 1 if input.children.length = 0
+                                                     else input.children[0].indentLevel
+            self.overrideAttrsAsInput(element, input, {type: element.tag}, {})
+            label.append(input)
+            input.children |: label.append($)
+            input.children: []
+            return label
+
+        func block()
+            root: AppliedTagElement(element.parent, element.indentLevel, element.line, 'div')
+            root.addClass(element.tag)
+            if element.argsKey.disabled
+                root.addClass('disabled')
+            label: AppliedTagElement(element.parent, root.indentLevel + 1, element.line, 'label')
+            input: element.replaceTag('input')
+            input.indentLevel: label.indentLevel + 1 if input.children.length = 0
+                                                     else input.children[0].indentLevel
+            self.overrideAttrsAsInput(element, input, {type: element.tag}, {})
+            label.append(input)
+            input.children |: label.append($)
+            input.children: []
+            root.append(label)
+            return root
+
+        return inline() if element.argsKey.inline else block()
+
+    func _applied_checkbox(element)
+        return this._checkBoxApplied(element)
+
+    func _applied_radio(element)
+        return this._checkBoxApplied(element)
+
+    func _applied_container(element)
+        c: element.replaceTag('div')
+        c.addClass('container')
+        return c
+
+    func _applied_form_h(element)
+        c: element.replaceTag('form')
+        c.addClass('form-horizontal')
+        c.addClass('form-submit')
+        return c
+
+    func _applied_row(element)
+        c: element.replaceTag('div')
+        c.addClass('form-group' if element.parent.isTag('form') ||
+                                    element.parent.isTag('form-h') else 'row')
+        return c
+
     func _firstOrCreate(parent, elements, tag, throwMsg)
         if elements.length = 0
-            return TagElement(parent, parent.indentLevel + 1, parent.line, tag)
+            return AppliedTagElement(parent, parent.indentLevel + 1, parent.line, tag)
         e: elements[0]
         if elements.length > 1 && throwMsg
             elements[1].throw_(throwMsg)
@@ -1472,197 +1536,105 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
             elements[1].throw_(throwMsg)
         return e
 
-    func _ontagend_modal(element)
-        dialog: TagElement(element, element.indentLevel + 1, element.line, 'div')
+    func _applied_modal(element)
+        modal: element.replaceTag('div')
+        modal.addClass('modal')
+        modal.addClass('fade')
+        this.overrideAttrs(element, modal, {
+            role: 'dialog',
+            tabindex: '-1',
+            'aria-labelledby': '',
+            'aria-hidden': 'true',
+        }, {size: true})
+
+        dialog: AppliedTagElement(modal, modal.indentLevel + 1, modal.line, 'div')
         dialog.addClass('modal-dialog')
-        content: TagElement(dialog, dialog.indentLevel + 1, dialog.line, 'div')
+        dialog.addClass('modal-' + (element.attributes.size if element.attributes.size else 'lg'))
+        content: AppliedTagElement(dialog, dialog.indentLevel + 1, dialog.line, 'div')
         content.addClass('modal-content')
         dialog.append(content)
 
-        head: this._firstOrCreate(content, element.sliceChildren('head'), 'div',
+        head: this._firstOrCreate(content, modal.sliceChildren('head'), 'div',
                                   'more than 1 heads for modal')
         head.addClass('modal-header')
         content.append(head)
 
-        body: this._firstOrCreate(content, element.sliceChildren('body'), 'div',
+        body: this._firstOrCreate(content, modal.sliceChildren('body'), 'div',
                                   'more than 1 bodies for modal')
         body.addClass('modal-body')
         content.append(body)
 
-        closeBtn: TagElement(head, head.indentLevel + 1, head.line, 'button')
+        closeBtn: AppliedTagElement(head, head.indentLevel + 1, head.line, 'button')
         closeBtn.addClass('close')
         closeBtn.attr('type', 'button')
         closeBtn.attr('data-dismiss', 'modal')
         closeBtn.append(TextLineElement(closeBtn, closeBtn.indentLevel + 1, closeBtn.line, '&times;', (a): a))
         head.append(closeBtn)
-        title: this._firstOrNull(element.sliceChildren('title'), 'more than 1 titles for modal')
+        title: this._firstOrNull(modal.sliceChildren('title'), 'more than 1 titles for modal')
         if title != null
             title.tag: 'h4'
             title.addClass('modal-title')
             head.append(title)
-        element.children |: body.append($)
+        modal.children |: body.append($)
+        modal.children: []
+        modal.append(dialog)
+        return modal
 
-        element.children: []
-        element.append(dialog)
+    func _applied_modal_toggle(element)
+        toggle: element.replaceTag('button')
+        this.overrideAttrsAsBtn(element, toggle, {
+            'data-target': '#' + element.attributes.target,
+            'data-toggle': 'modal',
+        }, {target: true})
+        return toggle
 
-    func _rendertag_icon(element)
+    func _applied_icon(element)
         element.checkNoChildren()
-        icon: element.getOnlyArg(element, 'icon')
-        return this.renderInline('i', element, RenderOverrider().addClasses(['fa', 'fa-' + icon]))
+        t: element.replaceTag('i')
+        t.addClass('fa')
+        t.addClass('fa-' + element.getOnlyArg(element, 'icon'))
+        return t
 
-    func _createInputOvr(element)
-        o: RenderOverrider()
-        if element.argsKey.disabled || element.attributes.disabled
-            o.overrideAttr('disabled', 'disabled')
-        return o
-
-    func _createBtnOvr(element)
-        color: element.attributes.color if element.attributes.color else 'default'
-        return (this._createInputOvr(element)
-            .ignoreAttr('color').addClasses(['btn', 'btn-' + color])
-            .overrideAttr('type', element.attributes.type if element.attributes.type else 'button')
-        )
-
-    func _rendertag_btn(element)
-        return this.renderNonvoid('button', element, this._createBtnOvr(element))
-
-    func _rendertag_container(element)
-        return this.renderNonvoid(
-            'div', element, RenderOverrider().addClasses(['container']))
-
-    func _rendertag_form_h(element)
-        return this.renderNonvoid(
-            'form', element, RenderOverrider()
-                                .addClasses(['form-horizontal', 'form-submit']))
-
-    func _createFormCtlOvr(element)
-        return this._createInputOvr(element).addClass('form-control')
-
-    func _rendertag_input(element)
-        return this.renderVoid('input', element,
-                               this._createFormCtlOvr(element)
-                                        .overrideAttr('type', 'text'))
-
-    func _rendertag_passwd(element)
-        return this.renderVoid('input', element,
-                               this._createFormCtlOvr(element)
-                                        .overrideAttr('type', 'password'))
-
-    func _rendertag_textarea(element)
-        return this.renderNonvoid('textarea', element, this._createFormCtlOvr(element))
-
-    func _rendertag_select(element)
-        return this.renderNonvoid('select', element, this._createFormCtlOvr(element))
-
-    func _renderInputBox(element)
-        self: this
-
-        func inline()
-            r: []
-            label: AppliedTagElement(element.parent, element.indentLevel, element.line, 'label')
-            label.addClass(element.tag + '-inline')
-            input: AppliedTagElement(label, label.indentLevel + 1
-                                            if element.children.length = 0
-                                            else element.children[0].indentLevel,
-                                     element.line, 'input')
-            input.attributes: element.attributes
-            input.classes: element.classes
-            r.push(self.openTag('label', label, RenderOverrider()))
-            r.push(self.openTag('input', input,
-                                self._createInputOvr(element)
-                                        .overrideAttr('type', element.tag)))
-            element.children |: r.push($.render(self))
-            r.push(self.closeTag('label', label.indentLevel))
-            return r.join(self.eol())
-
-        func block()
-            r: []
-            root: AppliedTagElement(element.parent, element.indentLevel, element.line, 'div')
-            root.addClass(element.tag)
-            if element.argsKey.disabled
-                root.addClass('disabled')
-            label: AppliedTagElement(element.parent, root.indentLevel + 1, element.line, 'label')
-            input: AppliedTagElement(label, label.indentLevel + 1
-                                            if element.children.length = 0
-                                            else element.children[0].indentLevel,
-                                     element.line, 'input')
-            input.attributes: element.attributes
-            input.classes: element.classes
-            r.push(self.openTag('div', root, RenderOverrider()))
-            r.push(self.openTag('label', label, RenderOverrider()))
-            r.push(self.openTag('input', input,
-                                self._createInputOvr(element)
-                                        .overrideAttr('type', element.tag)))
-            element.children |: r.push($.render(self))
-            r.push(self.closeTag('label', label.indentLevel))
-            r.push(self.closeTag('div', root.indentLevel))
-            return r.join(self.eol())
-
-        return inline() if element.argsKey.inline else block()
-
-    func _rendertag_checkbox(element)
-        return this._renderInputBox(element)
-
-    func _rendertag_radio(element)
-        return this._renderInputBox(element)
-
-    func _rendertag_row(element)
-        cls: 'form-group' if element.parent.isTag('form') ||
-                             element.parent.isTag('form-h') else 'row'
-        return this.renderNonvoid('div', element, RenderOverrider().addClass(cls))
-
-    func _gridSizeOffsetOvr(element)
-        o: RenderOverrider().ignoreAttrs(['size', 'offset'])
-        if element.attributes.size > 0
-            o.addClass('col-sm-' + element.attributes.size)
+    func overrideAttrsAsGrid(src, dst, overrides, ignore)
+        ignore.size: true
+        ignore.offset: true
+        if src.attributes.size > 0
+            dst.addClass('col-sm-' + src.attributes.size)
         else
-            o.addClass('col-sm-4')
-        if element.attributes.offset > 0
-            o.addClass('col-sm-offset-' + element.attributes.offset)
-        return o
+            dst.addClass('col-sm-4')
+        if src.attributes.offset > 0
+            dst.addClass('col-sm-offset-' + src.attributes.offset)
+        this.overrideAttrs(src, dst, overrides, ignore)
 
-    func _rendertag_grid(element)
-        return this.renderNonvoid('div', element, this._gridSizeOffsetOvr(element))
+    func _applied_grid(element)
+        g: element.replaceTag('div')
+        this.overrideAttrsAsGrid(element, g, {}, {})
+        return g
 
-    func _rendertag_grid_s(element)
-        return this.renderNonvoid('label', element, this._gridSizeOffsetOvr(
-                    element).addClass('form-control-static'))
+    func _applied_grid_s(element)
+        g: element.replaceTag('label')
+        g.addClass('form-control-static')
+        this.overrideAttrsAsGrid(element, g, {}, {})
+        return g
 
-    func _rendertag_grid_c(element)
-        return this.renderNonvoid('label', element, this._gridSizeOffsetOvr(
-                    element).addClass('control-label'))
+    func _applied_grid_c(element)
+        g: element.replaceTag('label')
+        g.addClass('control-label')
+        this.overrideAttrsAsGrid(element, g, {}, {})
+        return g
 
-    func _rendertag_lbl(element)
-        color: element.attributes.color if element.attributes.color else 'default'
-        return this.renderNonvoid('span', element,
-                                  RenderOverrider().ignoreAttr('color')
-                                                   .addClasses(['label', 'label-' + color]))
-
-    func _rendertag_modal(element)
-        r: []
-        o: RenderOverrider({
-            role: 'dialog',
-            tabindex: '-1',
-            'aria-labelledby': '',
-            'aria-hidden': 'true',
-        }).ignoreAttr('size').addClasses(['modal', 'fade'])
-        size: 'modal-' + (element.attributes.size if element.attributes.size else 'lg')
-        r.push(this.openTag('div', element, o))
-        r.push(this.renderNonvoid('div', element.children[0],
-                                  RenderOverrider().addClasses(['modal-dialog', size])))
-        r.push(this.closeTag('div', element.indentLevel))
-        return r.join(this.eol())
-
-    func _rendertag_modal_toggle(element)
-        return this.renderNonvoid('button', element, this._createBtnOvr(element)
-                .overrideAttr('data-target', '#' + element.attributes.target)
-                .overrideAttr('data-toggle', 'modal')
-        )
+    func _applied_lbl(element)
+        label: element.replaceTag('span')
+        label.addClass('label')
+        label.addClass('label-' + (element.attributes.color if element.attributes.color
+                                                            else 'default'))
+        this.overrideAttrs(element, label, {}, {color: true})
+        return label
 
 func renderBootstrap(text, variables)
     return BootstrapFontawesomeBuilder(variables).buildAndRenderText(text)
 
-export topaz.BootstrapFontawesomeBuilder: BootstrapFontawesomeBuilder
-export topaz.renderBootstrap: renderBootstrap
+export BootstrapFontawesomeBuilder: BootstrapFontawesomeBuilder
+export renderBootstrap: renderBootstrap
 
-export topaz.__version__: '0.1.0 2015-12-31 Experimental'
+export __version__: '0.2.0 2015-1-29 Experimental'
