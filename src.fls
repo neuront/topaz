@@ -98,6 +98,9 @@ class ValueBase
     ctor(line)
         this.line: line
 
+    func empty()
+        return false
+
     func apply(builder)
         return null
 
@@ -109,6 +112,13 @@ class ValueBase
 
     func throw_(msg)
         throw Exception(this.line, msg, 'value', this)
+
+class EmptyExpr: ValueBase
+    ctor(line) super(line)
+        0
+
+    func empty()
+        return true
 
 class LiteralValue: ValueBase
     ctor(line, v) super(line)
@@ -505,9 +515,6 @@ class Automation
     func reduced(expr)
         throw 'Unimplemented expr'
 
-    func reducedList(exprs, line)
-        throw 'Unimplemented exprs'
-
     func addLine(string, lineno)
         tokens: tokenize(string.trim(), lineno)
         if tokens.length = 0
@@ -571,46 +578,38 @@ class DynamicDataAutomationBase: Automation
             return token.unexpected()
         this._pushIdent(token)
 
-class ExprAutomationBase: DynamicDataAutomationBase
-    ctor(stack, closeToken) super(stack)
-        this.closeReport: ''
-        if closeToken
-            this.closeReport: ', expect ' + closeToken.image
-
-            self: this
-            self['_push_' + closeToken.type]: (token): self.closing(token)
-        else
-            self: this
-            self.finished: (): self._finished()
-
-    func _push_closeparen(token)
-        token.throw_('Mismatch parenthesis' + this.closeReport)
-
-    func _push_closebracket(token)
-        token.throw_('Mismatch parenthesis' + this.closeReport)
-
-    func finished()
-        return false
-
-class ExprAutomation: ExprAutomationBase
-    ctor(stack, line, closeToken) super(stack, closeToken)
+class ArithAutomation: DynamicDataAutomationBase
+    ctor(stack, line, allowEmpty) super(stack)
         this._needFactor: true
         this._exprStack: []
         this._opStack: []
         this.line: line
+        this.allowEmpty: allowEmpty
+        ['comma', 'closeparen', 'closebracket'] |: this._setFollowing($)
 
-    func closing(token)
+    func _setFollowing(tokenType)
+        this.setPushFunc(tokenType, (self, token): self._finishAt(token))
+
+    func _pushkw_else(token)
+        this._finishAt(token)
+
+    func _finishAt(token)
+        if this._empty() && this.allowEmpty
+            return this.stack.tokenAfterReduced(EmptyExpr(token.line), token)
         if this._exprStack.length = 0
             token.unexpected()
         this.finish()
+        this.stack.top().push(token)
 
     func finish()
         this._reduceBinary(-1)
-        this.stack.pop()
-        this.stack.top().reduced(this._exprStack[0])
+        this.stack.reduced(this._exprStack[0])
 
-    func _finished()
+    func finished()
         return !this._needFactor
+
+    func _empty()
+        return this._exprStack.length = 0 && this._opStack.length = 0
 
     func forceFinish()
         ifnot this.finished()
@@ -678,23 +677,20 @@ class ExprAutomation: ExprAutomationBase
             token.unexpected()
         this._pushValue(construct(token.line, token.image))
 
-    func reducedList(list, line)
-        this._pushValue(ListValue(line, list))
-
     func _push_openparen(token)
         ifnot this._needFactor
             token.unexpected()
-        this.stack.push(ExprAutomation(this.stack, token.line, Token(')', 'closeparen')))
+        this.stack.push(ArithWrapAutomation(this.stack, token.line, 'closeparen', ')'))
         self: this
         self.reduced: (expr): self._pushValue(expr)
 
     func _push_openbracket(token)
-        closerTk: Token(']', 'closebracket')
-        if this._needFactor
-            return this.stack.push(ExprListAutomation(this.stack, token.line, closerTk))
-        this.stack.push(ExprAutomation(this.stack, token.line, closerTk))
-        this.needFactor: false
         self: this
+        if self._needFactor
+            self.reduced: (expr): self._pushValue(expr)
+            return this.stack.push(ExprListAutomation(this.stack, token.line, 'closebracket', ']'))
+        this.stack.push(ArithWrapAutomation(this.stack, token.line, 'closebracket', ']'))
+        this.needFactor: false
         self.reduced: (expr):
             t: Token('.', 'op', 'lookup', token.line)
             t.construct: (exprStack):
@@ -713,89 +709,66 @@ class ExprAutomation: ExprAutomationBase
         self: this
         self.reduced: (expr): self._pushValue(expr)
 
-class ExprAutomationCloseAny: ExprAutomation
-    ctor(stack, line) super(stack, line)
-        0
+class ArithWrapAutomation: DynamicDataAutomationBase
+    ctor(stack, line, closerType, closerImage) super(stack)
+        this.line: line
+        this.closeReport: ', expect ' + closerImage
+        this.setPushFunc(closerType, (self, token): self.finish())
+        this._expr: null
 
-    func _reduceFinish(token)
-        this.closing(token)
-        this.stack.top().push(token)
+    func activated()
+        this.stack.push(ArithAutomation(this.stack, this.line))
+
+    func reduced(expr)
+        this._expr: expr
+
+    func finish()
+        this.stack.reduced(this._expr)
+
+    func finished()
+        return false
 
     func _push_closeparen(token)
-        this._reduceFinish(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
 
     func _push_closebracket(token)
-        this._reduceFinish(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
 
-    func _pushkw_else(token)
-        this._reduceFinish(token)
+    func forceFinish()
+        throw Exception(this.line, 'Unexpected EOF' + this.closeReport, 'am', this)
 
-class ConditionalExprAutomation: ExprAutomationBase
+class ConditionalExprAutomation: DynamicDataAutomationBase
     ctor(stack, line, consq) super(stack)
         this.line: line
         this._predicate: null
         this._consequence: consq
 
+    func reduced(expr)
         self: this
-        self.reduced: (expr):
-            self._predicate: expr
-            self._pushkw_else: (token):
-                self.stack.push(ExprAutomationCloseAny(self.stack, token.line))
-                self.reduced: (expr): self._finish(expr)
+        self._predicate: expr
+        self._pushkw_else: (token):
+            self.stack.push(ArithAutomation(self.stack, token.line))
+            self.reduced: (expr): self.finish(expr)
 
     func activated()
-        this.stack.push(ExprAutomationCloseAny(this.stack, this.line))
+        this.stack.push(ArithAutomation(this.stack, this.line))
 
-    func _finish(expr)
-        this.finish()
-        this.stack.top().reduced(ConditionalValue(
-                    this.line, this._predicate, this._consequence, expr))
+    func finish(expr)
+        this.stack.reduced(ConditionalValue(this.line, this._predicate, this._consequence, expr))
 
-    func _push_closeparen(token)
-        token.throw_('Mismatch parenthesis' + this.closeReport)
+class ExprListAutomation: ArithWrapAutomation
+    ctor(stack, line, closerType, closerImage) super(stack, line, closerType, closerImage)
+        this._expr: ListValue(line, [])
 
-    func _push_closebracket(token)
-        token.throw_('Mismatch parenthesis' + this.closeReport)
+    func activated()
+        this.stack.push(ArithAutomation(this.stack, this.line, true))
 
-class ExprListAutomation: ExprAutomationBase
-    ctor(stack, line, closeToken) super(stack, closeToken)
-        this.line: line
-        this._closeType: closeToken.type
-        this._exprs: []
-
-        ['ident', 'value', 'op', 'openparen', 'openbracket'] |: this.setPushFunc($, (self, t):
-            a: self._pushAutomation()
-            a.push(t)
-        )
+    func _push_comma()
+        this.activated()
 
     func reduced(expr)
-        this._exprs.push(expr)
-
-    func closing(_)
-        this.finish()
-
-    func _push_closebracket(token)
-        this.finish()
-
-    func finish()
-        this.stack.pop()
-        this.stack.top().reducedList(this._exprs, this.line)
-
-    func _pushAutomation()
-        self: this
-        a: ExprAutomation(self.stack, self.line)
-        a.setPushFunc('comma', (am, token):
-            am.closing(token)
-        )
-        a.setPushFunc(self._closeType, (am, token):
-            am.closing(token)
-            self.finish()
-        )
-        self.stack.push(a)
-        return a
-
-    func _finished()
-        return true
+        ifnot expr.empty()
+            this._expr.list.push(expr)
 
 class ForHeadAutomation: DynamicDataAutomationBase
     ctor(forToken, stack, parent) super(stack)
@@ -813,7 +786,7 @@ class ForHeadAutomation: DynamicDataAutomationBase
         if this.declares.length = 0 || this.declares.length > 2
             this.forToken.throw_('For loop expects 1 or 2 declared names, but '
                                  + this.declares.length)
-        this.stack.push(ExprAutomation(this.stack, token.line))
+        this.stack.push(ArithAutomation(this.stack, token.line))
 
         self: this
         self.reduced: (expr):
@@ -857,7 +830,7 @@ class CtrlFlowAutomation: DynamicDataAutomationBase
 
     func _pushkw_if(token)
         self: this
-        self.stack.push(ExprAutomation(self.stack, token.line))
+        self.stack.push(ArithAutomation(self.stack, token.line))
         self._reduced: (expr):
             self.parent.append(IfElement(self.parent, self.stack.indentLevel, expr))
             self._finished: true
@@ -874,7 +847,7 @@ class CtrlFlowAutomation: DynamicDataAutomationBase
 
     func _pushExprAm(token)
         self: this
-        self.stack.push(ExprAutomation(self.stack, token.line))
+        self.stack.push(ArithAutomation(self.stack, token.line))
         self._reduced: (expr):
             self.parent.append(ValueElement(self.parent, self.stack.indentLevel, expr))
         self.stack.top().push(token)
@@ -904,7 +877,7 @@ class TagAutomation: Automation
     func _allowOpenParen(reduced)
         self: this
         self._push_openparen: (token):
-            self.stack.push(ExprAutomation(self.stack, token.line, Token(')', 'closeparen')))
+            self.stack.push(ArithWrapAutomation(self.stack, token.line, 'closeparen', ')'))
             self._reduced: reduced
 
     func _restoreState()
@@ -1115,6 +1088,14 @@ class AutomationStack
     func push(a)
         this.stack.push(a)
         a.activated()
+
+    func reduced(expr)
+        this.pop()
+        this.top().reduced(expr)
+
+    func tokenAfterReduced(expr, token)
+        this.reduced(expr)
+        this.top().push(token)
 
     func pop()
         return this.stack.pop()

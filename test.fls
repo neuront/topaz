@@ -641,6 +641,26 @@ if true
     if true
         it('look up', %)
         builder: core.HTMLBasisBuilder()
+        builder.addLine('p')
+        builder.addLine('   % 1 + x[0] / 2')
+        builder.addLine('   :point,')
+        builder.addLine('   % 2 * x[1] - 1')
+        builder.addLine('   :coins')
+        builder.finish()
+
+        EXPECT: '''
+<p>
+   3
+   point,
+   199
+   coins
+</p>
+    '''.trim()
+        assert.strictEqual(EXPECT, renderHTML(builder.getElements(), {x: [4, 100]}))
+
+    if true
+        it('nested list', %)
+        builder: core.HTMLBasisBuilder()
         builder.addLine('select')
         builder.addLine('  % for index, value in [["ab", x, "cd"], []][0]')
         builder.addLine('    option value=(index)')
@@ -666,23 +686,6 @@ if true
 </div>
     '''.trim()
         assert.strictEqual(EXPECT, renderHTML(elements, {x: "uv"}))
-
-        builder.reset()
-        builder.addLine('p')
-        builder.addLine('   % 1 + x[0] / 2')
-        builder.addLine('   :point,')
-        builder.addLine('   % 2 * x[1] - 1')
-        builder.addLine('   :coins')
-
-        EXPECT_: '''
-<p>
-   3
-   point,
-   199
-   coins
-</p>
-    '''.trim()
-        assert.strictEqual(EXPECT_, renderHTML(builder.getElements(), {x: [4, 100]}))
 
     if true
         it('branch root without else', %)
@@ -1443,7 +1446,7 @@ if true
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(2, $e.line)
-            assert.strictEqual('Unexpected EOF', $e.message)
+            assert.strictEqual('Unexpected EOF, expect )', $e.message)
             assert.strictEqual('am', $e.type)
 
         builder.reset()
