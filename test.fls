@@ -667,16 +667,17 @@ if true
         builder: core.HTMLBasisBuilder({
             x: 3,
             y: '#ccd',
+            e: '"',
         })
         r: builder.buildAndRenderText('''
-        button data={id: 2 + x, target: 'my-target'} style={
+        button data={id: 2 + x, target: 'my-target', esc: e} style={
             color: 'white',
             background-color: y
         }
             :squeeze me
         '''.trim())
         assert.strictEqual('''
-<button data-id="5" data-target="my-target" style="color:white;background-color:#ccd">
+<button data-id="5" data-target="my-target" data-esc="\\"" style="color:white;background-color:#ccd">
             squeeze me
 </button>
         '''.trim(), r)
