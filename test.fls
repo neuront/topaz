@@ -639,6 +639,49 @@ if true
             assert.strictEqual('value', $e.type)
 
     if true
+        it('build dict', %)
+        builder: core.HTMLBasisBuilder()
+        e: builder.buildTextToElements('''
+        button data={} style={
+            color: 'white',
+            background-color: '#ccd',
+        }
+        '''.trim())
+        assert.strictEqual(1, e.length)
+        btn: e[0]
+        assert.strictEqual('button', btn.tag)
+        assert.deepEqual({}, btn.attributes.data.dict)
+        assert.deepEqual({
+            color: {
+              line: 2,
+              value: 'white',
+            },
+            'background-color': {
+              line: 3,
+              value: '#ccd',
+            },
+        }, btn.attributes.style.dict)
+
+    if true
+        it('apply dict', %)
+        builder: core.HTMLBasisBuilder({
+            x: 3,
+            y: '#ccd',
+        })
+        r: builder.buildAndRenderText('''
+        button data={id: 2 + x, target: 'my-target'} style={
+            color: 'white',
+            background-color: y
+        }
+            :squeeze me
+        '''.trim())
+        assert.strictEqual('''
+<button data-id="5" data-target="my-target" style="color:white;background-color:#ccd">
+            squeeze me
+</button>
+        '''.trim(), r)
+
+    if true
         it('look up', %)
         builder: core.HTMLBasisBuilder()
         builder.addLine('p')

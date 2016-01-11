@@ -20,8 +20,6 @@ PATTERNS: [
     [/^'([^'\\]*(\\.[^'\\]*)*)'/i, 'value', 'str'],
     [/^[0-9]+/, 'value', 'num'],
     [/^[0-9]*\.[0-9]+/, 'value', 'num'],
-    [/^:::/, 'textblock'],
-    [/^:.+$/, 'text'],
 
     [/^==/, 'op', 'eq'],
     [/^<=/, 'op', 'le'],
@@ -44,11 +42,14 @@ PATTERNS: [
     [/^\./, 'dot'],
     [/^%/, 'percentage'],
     [/^,/, 'comma'],
+    [/^:/, 'colon'],
 
     [/^\(/, 'openparen'],
     [/^\)/, 'closeparen'],
     [/^\[/, 'openbracket'],
     [/^\]/, 'closebracket'],
+    [/^\{/, 'openbrace'],
+    [/^\}/, 'closebrace'],
 ]
 
 class Token
@@ -103,6 +104,9 @@ class ValueBase
 
     func apply(builder)
         return null
+
+    func applyAsAttr(builder, element, attr)
+        return element.attr(attr, this.apply(builder))
 
     func literal()
         this.throw_('Cannot convert to literal value')
@@ -208,6 +212,19 @@ class ListValue: ValueBase
 
     func apply(builder)
         return this.list |: $.apply(builder)
+
+class DictValue: ValueBase
+    ctor(line, dict) super(line)
+        this.dict: dict
+
+    func apply(builder)
+        r: {}
+        this.dict |:
+            r[$k]: $.apply(builder)
+        return r
+
+    func applyAsAttr(builder, element, attr)
+        builder.applyDictForAttr(element, attr, this.dict)
 
 class ConditionalValue: ValueBase
     ctor(line, predicate, consequence, alternative) super(line)
@@ -403,7 +420,7 @@ class TagElement: TagElementBase
                                    this.line, this.tag)
         this.attributes |:
             if $
-                element.attr($k, $.apply(builder))
+                $.applyAsAttr(builder, element, $k)
         this.args |:
             r: $.apply(builder)
             if r
@@ -516,10 +533,7 @@ class Automation
         throw 'Unimplemented expr'
 
     func addLine(string, lineno)
-        tokens: tokenize(string.trim(), lineno)
-        if tokens.length = 0
-            return
-        this.stack.consume(tokens)
+        this.stack.consume(tokenize(string.trim(), lineno))
 
     func finish()
         this.stack.pop()
@@ -585,7 +599,7 @@ class ArithAutomation: DynamicDataAutomationBase
         this._opStack: []
         this.line: line
         this.allowEmpty: allowEmpty
-        ['comma', 'closeparen', 'closebracket'] |: this._setFollowing($)
+        ['comma', 'closeparen', 'closebracket', 'closebrace'] |: this._setFollowing($)
 
     func _setFollowing(tokenType)
         this.setPushFunc(tokenType, (self, token): self._finishAt(token))
@@ -688,7 +702,7 @@ class ArithAutomation: DynamicDataAutomationBase
         self: this
         if self._needFactor
             self.reduced: (expr): self._pushValue(expr)
-            return this.stack.push(ExprListAutomation(this.stack, token.line, 'closebracket', ']'))
+            return this.stack.push(ListAutomation(this.stack, token.line, 'closebracket', ']'))
         this.stack.push(ArithWrapAutomation(this.stack, token.line, 'closebracket', ']'))
         this.needFactor: false
         self.reduced: (expr):
@@ -734,6 +748,9 @@ class ArithWrapAutomation: DynamicDataAutomationBase
     func _push_closebracket(token)
         token.throw_('Mismatch parenthesis' + this.closeReport)
 
+    func _push_closebrace(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
     func forceFinish()
         throw Exception(this.line, 'Unexpected EOF' + this.closeReport, 'am', this)
 
@@ -756,7 +773,7 @@ class ConditionalExprAutomation: DynamicDataAutomationBase
     func finish(expr)
         this.stack.reduced(ConditionalValue(this.line, this._predicate, this._consequence, expr))
 
-class ExprListAutomation: ArithWrapAutomation
+class ListAutomation: ArithWrapAutomation
     ctor(stack, line, closerType, closerImage) super(stack, line, closerType, closerImage)
         this._expr: ListValue(line, [])
 
@@ -769,6 +786,44 @@ class ExprListAutomation: ArithWrapAutomation
     func reduced(expr)
         ifnot expr.empty()
             this._expr.list.push(expr)
+
+class DictItemAutomation: DynamicDataAutomationBase
+    ctor(stack, dictVal) super(stack)
+        this._name: null
+        this._dictVal: dictVal
+
+    func _pushIdent(token)
+        this._name: token.image
+
+    func _push_value(token)
+        this._name: eval(token.image).toString()
+
+    func _push_colon(token)
+        this.stack.push(ArithAutomation(this.stack, token.line))
+
+    func reduced(expr)
+        this._dictVal[this._name]: expr
+        this.finish()
+
+    func _push_closebrace(token)
+        if this._name = null
+            this.finish()
+            return this.stack.top().push(token)
+        token.throw_('Expect item value')
+
+    func finished()
+        return false
+
+class DictAutomation: ArithWrapAutomation
+    ctor(stack, line, closerType, closerImage) super(stack, line, closerType, closerImage)
+        this._expr: DictValue(line, {})
+        this._key: null
+
+    func activated()
+        this.stack.push(DictItemAutomation(this.stack, this._expr.dict))
+
+    func _push_comma()
+        this.activated()
 
 class ForHeadAutomation: DynamicDataAutomationBase
     ctor(forToken, stack, parent) super(stack)
@@ -821,9 +876,8 @@ class CtrlFlowAutomation: DynamicDataAutomationBase
         this._finished: false
         this._reduced: (_): 0
 
-        ['value', 'op', 'openparen', 'openbracket'] |: this.setPushFunc($, (self, t):
-            self._pushExprAm(t)
-        )
+        ['value', 'op', 'openparen', 'openbracket'] |: this.setPushFunc(
+                $, (self, t): self._pushExprAm(t))
 
     func finished()
         return this._finished
@@ -878,6 +932,12 @@ class TagAutomation: Automation
         self: this
         self._push_openparen: (token):
             self.stack.push(ArithWrapAutomation(self.stack, token.line, 'closeparen', ')'))
+            self._reduced: reduced
+
+    func _allowOpenBrace(reduced)
+        self: this
+        self._push_openbrace: (token):
+            self.stack.push(DictAutomation(self.stack, token.line, 'closebrace', '}'))
             self._reduced: reduced
 
     func _restoreState()
@@ -958,7 +1018,9 @@ class TagAutomation: Automation
             self.element.attr(self._lastKey.image, eval(token.image), token.line)
             self._restoreState()
         self._setUnfinishable('attribute value')
-        self._allowOpenParen((expr): self.element.attrExpr(self._lastKey.image, expr))
+        reducedValue: (expr): self.element.attrExpr(self._lastKey.image, expr)
+        self._allowOpenParen(reducedValue)
+        self._allowOpenBrace(reducedValue)
 
     func finished()
         return this._finished
@@ -1016,7 +1078,7 @@ class TextBlockAutomation: Automation
         self: this
         self._push_ident: (token):
             self._lastProp: token
-            self._push_dent: (token): token.unexpected()
+            self._push_ident: (token): token.unexpected()
         self._push_eq: (token): self._waitValue()
 
     func _waitValue()
@@ -1057,21 +1119,27 @@ class TextBlockAutomation: Automation
     func finished()
         return false
 
+_TEXTBLOCK_PATTERN: /^:::/
+_TEXT_PATTERN: /^:.+$/
+
 class BootstrapAutomation: Automation
     ctor(stack, appendPoint) super(stack)
         this.appendPoint: appendPoint
 
+    func addLine(string, lineno)
+        strim: string.trimLeft()
+        if _TEXTBLOCK_PATTERN.exec(strim)
+            this.stack.push(TextBlockAutomation(
+                this.stack, this.appendPoint, lineno, this.stack.indentLevel, true))
+            return this.stack.consume(tokenize(strim.slice(3).trim(), lineno))
+        if _TEXT_PATTERN.exec(strim)
+            return this.appendPoint.append(TextLineElement(
+                this.appendPoint, this.stack.indentLevel, lineno, strim.slice(1)))
+        super.addLine(string, lineno)
+
     func _push_ident(token)
         this.stack.push(TagAutomation(this.stack, TagElement(
             this.appendPoint, this.stack.indentLevel, token.line, token.image)))
-
-    func _push_text(token)
-        this.appendPoint.append(TextLineElement(
-            this.appendPoint, this.stack.indentLevel, token.line, token.image.slice(1)))
-
-    func _push_textblock(token)
-        this.stack.push(TextBlockAutomation(this.stack, this.appendPoint, token.line,
-                                            this.stack.indentLevel, true))
 
     func _push_percentage(token)
         this.stack.push(CtrlFlowAutomation(this.stack, this.appendPoint))
@@ -1197,6 +1265,22 @@ class Builder
 
     func getAppendPoint(indentLevel)
         return this._root.getAppendPoint(indentLevel)
+
+    func _applyDictForData(element, dictVal)
+        dictVal |: element.attr('data-' + $k, $.apply(this).toString())
+
+    func _applyDictForStyle(element, dictVal)
+        element.attr('style', (dictVal |: [$k, $.apply(this)].join(':')).join(';'))
+
+    func applyDictForAttr(element, attr, dictVal)
+        if attr = 'data'
+            return this._applyDictForData(element, dictVal)
+        if attr = 'style'
+            return this._applyDictForStyle(element, dictVal)
+        return this.applyDictForCustomAttr(element, attr, dictVal)
+
+    func applyDictForCustomAttr(element, attr, dictVal)
+        dictVal.throw_('Dict value not handled for ' + attr + ' of ' + element.tag)
 
     func _initStackIfNull(indentLevel)
         self: this
