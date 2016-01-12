@@ -676,6 +676,20 @@ div
         '''.trim(), r)
 
     if true
+        it('apply null', %)
+        builder: core.HTMLBasisBuilder({ x: null })
+        r: builder.buildAndRenderText('''
+        button#('a' if x == null else 'b').('c' if x != null else 'd').(null)
+            :squeeze me
+        '''.trim())
+
+        assert.strictEqual('''
+<button class="d" id="a">
+            squeeze me
+</button>
+        '''.trim(), r)
+
+    if true
         it('look up', %)
         builder: core.HTMLBasisBuilder()
         elements: builder.buildTextToElements('''
