@@ -36,15 +36,16 @@ if true
                 })
 
         builder: TestBuilder()
-        builder.addLine('div')
-        builder.addLine('  span')
-        builder.addLine('  input')
-        builder.addLine('form')
-        builder.addLine('  icon')
-        builder.addLine('  p')
-        builder.addLine('    button')
-        builder.addLine('    label')
-        builder.finish()
+        builder.buildTextToElements('''
+div
+  span
+  input
+form
+  icon
+  p
+    button
+    label
+''')
 
         assert.deepEqual([
             {type: 'tagBegin', tag: 'div', parent: undefined},
@@ -68,9 +69,7 @@ if true
 
     it('build & apply', ():
         builder: core.HTMLBasisBuilder()
-        builder.addLine('input#q.x type=text disabled')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('input#q.x type=text disabled')
         assert.strictEqual(1, elements.length)
         e: elements[0]
         assert.strictEqual('input', e.tag)
@@ -119,10 +118,10 @@ if true
     if true
         it('render simple', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('input value=Hello')
-        builder.addLine('span data-textValue="world!"')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+input value=Hello
+span data-textValue="world!"
+''')
         assert.strictEqual(2, elements.length)
 
         EXPECT: '''
@@ -130,16 +129,16 @@ if true
 <span data-textValue="world!">
 </span>
         '''.trim()
-        assert.strictEqual(EXPECT, renderHTML(builder.getElements()))
+        assert.strictEqual(EXPECT, renderHTML(elements))
 
     if true
         it('render escape', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('''input value='&"' ''')
-        builder.addLine('''span''')
-        builder.addLine('''   :<===>''')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+input value='&"'
+span
+   :<===>
+''')
         assert.strictEqual(2, elements.length)
 
         EXPECT: '''
@@ -148,27 +147,27 @@ if true
    &#60;===&#62;
 </span>
         '''.trim()
-        assert.strictEqual(EXPECT, renderHTML(builder.getElements()))
+        assert.strictEqual(EXPECT, renderHTML(elements))
 
     if true
         it('render elements', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('html5')
-        builder.addLine('  head')
-        builder.addLine('    charset utf-8')
-        builder.addLine('    title')
-        builder.addLine('      :Hello Topaz')
-        builder.addLine('    cssfile "/static/css/bootstrap.css"')
-        builder.addLine('    jsfile "/static/js/jquery.js"')
-        builder.addLine('    js')
-        builder.addLine('      $(document).ready(function() {')
-        builder.addLine('        console.log("hello, world <3")')
-        builder.addLine('      });')
-        builder.addLine('  body')
-        builder.addLine('    p')
-        builder.addLine('      :Hello world <3')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+html5
+  head
+    charset utf-8
+    title
+      :Hello Topaz
+    cssfile "/static/css/bootstrap.css"
+    jsfile "/static/js/jquery.js"
+    js
+      $(document).ready(function() {
+        console.log("hello, world <3")
+      });
+  body
+    p
+      :Hello world <3
+''')
         assert.strictEqual(1, elements.length)
         root: elements[0]
         assert.strictEqual(1, root.findChildren('head').length)
@@ -232,11 +231,12 @@ if true
     if true
         it('render element attrs & classes', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div#root.topaz')
-        builder.addLine('  span.topax.topay')
-        builder.addLine('    :::')
-        builder.addLine('    the quick "brown" <fox> jumps over a lazy dog')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+div#root.topaz
+  span.topax.topay
+    :::
+    the quick "brown" <fox> jumps over a lazy dog
+''')
 
         EXPECT: '''
 <div class="topaz" id="root">
@@ -246,19 +246,20 @@ if true
 </div>
         '''.trim()
 
-        assert.strictEqual(EXPECT, renderHTML(builder.getElements()))
+        assert.strictEqual(EXPECT, renderHTML(elements))
 
     if true
         it('text block opts', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('pre')
-        builder.addLine('  ::: left=trunc eol=br')
-        builder.addLine('  the quick "brown" <fox>')
-        builder.addLine('    <fox> jumps over a lazy dog')
-        builder.addLine('div')
-        builder.addLine('  ::: escape=no')
-        builder.addLine('  This is a <strong>template</strong> engine.')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+pre
+  ::: left=trunc eol=br
+  the quick "brown" <fox>
+    <fox> jumps over a lazy dog
+div
+  ::: escape=no
+  This is a <strong>template</strong> engine.
+''')
 
         EXPECT: '''
 <pre>
@@ -269,15 +270,16 @@ the quick &#34;brown&#34; &#60;fox&#62;<br>  &#60;fox&#62; jumps over a lazy dog
 </div>
     '''.trim()
 
-        assert.strictEqual(EXPECT, renderHTML(builder.getElements()))
+        assert.strictEqual(EXPECT, renderHTML(elements))
 
     if true
         it('text block opts with errors', %)
         try
-            builder: core.HTMLBasisBuilder()
-            builder.addLine('pre')
-            builder.addLine('  ::: left')
-            builder.addLine('  the quick "brown" <fox> jumps over a lazy dog')
+            core.HTMLBasisBuilder().buildTextToElements('''
+pre
+  ::: left
+  the quick "brown" <fox> jumps over a lazy dog
+'''.trim())
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(2, $e.line)
@@ -286,10 +288,11 @@ the quick &#34;brown&#34; &#60;fox&#62;<br>  &#60;fox&#62; jumps over a lazy dog
             assert.strictEqual('left', $e.object.image)
 
         try
-            builder: core.HTMLBasisBuilder()
-            builder.addLine('pre')
-            builder.addLine('  ::: left=nothing')
-            builder.addLine('  the quick "brown" <fox> jumps over a lazy dog')
+            core.HTMLBasisBuilder().buildTextToElements('''
+pre
+  ::: left=nothing
+  the quick "brown" <fox> jumps over a lazy dog
+'''.trim())
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(2, $e.line)
@@ -298,10 +301,11 @@ the quick &#34;brown&#34; &#60;fox&#62;<br>  &#60;fox&#62; jumps over a lazy dog
             assert.strictEqual('nothing', $e.object.image)
 
         try
-            builder: core.HTMLBasisBuilder()
-            builder.addLine('pre')
-            builder.addLine('  ::: left=trunc right=keep left=trim')
-            builder.addLine('  the quick "brown" <fox> jumps over a lazy dog')
+            core.HTMLBasisBuilder().buildTextToElements('''
+pre
+  ::: left=trunc right=keep left=trim
+  the quick "brown" <fox> jumps over a lazy dog
+'''.trim())
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(2, $e.line)
@@ -314,9 +318,7 @@ if true
     if true
         it('apply', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('input value=(vv)')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''input value=(vv)''')
         assert.strictEqual(1, elements.length)
         e: elements[0]
         assert.strictEqual('input', e.tag)
@@ -329,11 +331,7 @@ if true
         assert.strictEqual('input', e.tag)
         assert.strictEqual('vv', e.attributes.value.name)
 
-        builder.reset()
-        builder.addLine('input#(ii).(cc).dd (aa) value=(vv)')
-        builder.finish()
-
-        elements_: builder.getElements()
+        elements_: builder.buildTextToElements('input#(ii).(cc).dd (aa) value=(vv)')
         assert.strictEqual(1, elements_.length)
         e_: elements_[0]
         assert.strictEqual('input', e_.tag)
@@ -358,9 +356,8 @@ if true
     if true
         it('expression', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('input value=(15 / a - 4 / b) placeholder=(c.d * -2 + e.f * 3 % 2)')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('input value=(15 / a - 4 / b) ' +
+                                              'placeholder=(c.d * -2 + e.f * 3 % 2)')
         assert.strictEqual(1, elements.length)
 
         applied: elements[0].applyVariables(null, core.Builder({
@@ -375,9 +372,7 @@ if true
         assert.strictEqual(3, applied.attributes.value)
         assert.strictEqual(5, applied.attributes.placeholder)
 
-        builder.reset()
-        builder.addLine('input value=(1 + 1 - 2)')
-        elements_: builder.getElements()
+        elements_: builder.buildTextToElements('input value=(1 + 1 - 2)')
         assert.strictEqual(1, elements_.length)
         applied_: elements_[0].applyVariables(null, core.Builder())
 
@@ -387,11 +382,11 @@ if true
     if true
         it('conditional variables', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('''div''')
-        builder.addLine('''  input value=('a' + 'b' if x < y else 'c' + 'd')''')
-        builder.addLine('''  input value=('a' + ('b' if x < y else 'c') + 'd')''')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+div
+  input value=('a' + 'b' if x < y else 'c' + 'd')
+  input value=('a' + ('b' if x < y else 'c') + 'd')
+''')
         assert.strictEqual(1, elements.length)
 
         applied: elements[0].applyVariables(null, core.Builder({
@@ -416,17 +411,17 @@ if true
 
     it('compound conditions', ():
         builder: core.HTMLBasisBuilder()
-        builder.addLine('''div''')
-        builder.addLine('''  % if !-x.val < y.val || !u.val && v.val''')
-        builder.addLine('''    span''')
-        builder.addLine('''  % else''')
-        builder.addLine('''    i''')
-        builder.addLine('''  % if !(-x.val < y.val || !u.val) && v.val''')
-        builder.addLine('''    pre''')
-        builder.addLine('''  % else''')
-        builder.addLine('''    p''')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+div
+  % if !-x.val < y.val || !u.val && v.val
+    span
+  % else
+    i
+  % if !(-x.val < y.val || !u.val) && v.val
+    pre
+  % else
+    p
+''')
         assert.strictEqual(1, elements.length)
 
         class TestBuilder: core.HTMLBasisBuilder
@@ -538,20 +533,19 @@ if true
     if true
         it('numeric property', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('input value=0')
-        builder.finish()
+        elements: builder.buildTextToElements('input value=0')
 
         EXPECT: '<input value="0">'
 
-        assert.strictEqual(EXPECT, renderHTML(builder.getElements()))
+        assert.strictEqual(EXPECT, renderHTML(elements))
 
     it('list applied', ():
         b: core.HTMLBasisBuilder()
-        b.addLine('''div''')
-        b.addLine('''  % for i in x''')
-        b.addLine('''    span#i''')
-        b.finish()
-        elements: b.getElements()
+        elements: b.buildTextToElements('''
+div
+  % for i in x
+    span#i
+''')
         assert.strictEqual(1, elements.length)
 
         class TestBuilder: core.HTMLBasisBuilder
@@ -588,13 +582,13 @@ if true
     if true
         it('list', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('select')
-        builder.addLine('  % for index, value in ["ab", x, "cd"]')
-        builder.addLine('    option value=(index)')
-        builder.addLine('      % "Got: " + value')
-        builder.addLine('div')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+select
+  % for index, value in ["ab", x, "cd"]
+    option value=(index)
+      % "Got: " + value
+div
+''')
         assert.strictEqual(2, elements.length)
 
         EXPECT: '''
@@ -617,21 +611,20 @@ if true
     if true
         it('property', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('input value=(x.y) placeholder=(x.z.u)')
-        builder.finish()
+        elements: builder.buildTextToElements('input value=(x.y) placeholder=(x.z.u)')
 
         EXPECT: '''
 <input value="yy" placeholder="zu">
     '''.trim()
-        assert.strictEqual(EXPECT, renderHTML(builder.getElements(), {x: {y: 'yy', z: {u: 'zu'}}}))
+        assert.strictEqual(EXPECT, renderHTML(elements, {x: {y: 'yy', z: {u: 'zu'}}}))
 
         EXPECT_A: '''
 <input value="yy">
     '''.trim()
-        assert.strictEqual(EXPECT_A, renderHTML(builder.getElements(), {x: {y: 'yy', z: {}}}))
+        assert.strictEqual(EXPECT_A, renderHTML(elements, {x: {y: 'yy', z: {}}}))
 
         try
-            renderHTML(builder.getElements(), {x: {y: 'yy'}})
+            renderHTML(elements, {x: {y: 'yy'}})
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(1, $e.line)
@@ -685,12 +678,13 @@ if true
     if true
         it('look up', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('p')
-        builder.addLine('   % 1 + x[0] / 2')
-        builder.addLine('   :point,')
-        builder.addLine('   % 2 * x[1] - 1')
-        builder.addLine('   :coins')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+p
+   % 1 + x[0] / 2
+   :point,
+   % 2 * x[1] - 1
+   :coins
+''')
 
         EXPECT: '''
 <p>
@@ -700,18 +694,18 @@ if true
    coins
 </p>
     '''.trim()
-        assert.strictEqual(EXPECT, renderHTML(builder.getElements(), {x: [4, 100]}))
+        assert.strictEqual(EXPECT, renderHTML(elements, {x: [4, 100]}))
 
     if true
         it('nested list', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('select')
-        builder.addLine('  % for index, value in [["ab", x, "cd"], []][0]')
-        builder.addLine('    option value=(index)')
-        builder.addLine('      % "Got: " + value')
-        builder.addLine('div')
-        builder.finish()
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+select
+  % for index, value in [["ab", x, "cd"], []][0]
+    option value=(index)
+      % "Got: " + value
+div
+''')
         assert.strictEqual(2, elements.length)
 
         EXPECT: '''
@@ -734,12 +728,13 @@ if true
     if true
         it('branch root without else', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div')
-        builder.addLine('% if x')
-        builder.addLine('    input value=0')
-        builder.addLine('p')
+        elements: builder.buildTextToElements('''
+div
+% if x
+    input value=0
+p
+''')
 
-        elements: builder.getElements()
         assert.strictEqual(3, elements.length)
         applied: applyVariables(elements, {
             x: [],
@@ -771,15 +766,14 @@ if true
     if true
         it('branch root', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div')
-        builder.addLine('% if x + y')
-        builder.addLine('    input value=0')
-        builder.addLine('% else')
-        builder.addLine('    label')
-        builder.addLine('p')
-        builder.finish()
-
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+div
+% if x + y
+    input value=0
+% else
+    label
+p
+''')
         assert.strictEqual(3, elements.length)
         applied: applyVariables(elements, {
             x: 1,
@@ -815,15 +809,14 @@ if true
     if true
         it('branch not root', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div')
-        builder.addLine('  % if x + y')
-        builder.addLine('    input value=0')
-        builder.addLine('  % else')
-        builder.addLine('    label')
-        builder.addLine('p')
-        builder.finish()
-
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+div
+  % if x + y
+    input value=0
+  % else
+    label
+p
+''')
         assert.strictEqual(2, elements.length)
         applied: applyVariables(elements, {
             x: 1,
@@ -859,13 +852,12 @@ if true
     if true
         it('decls 1 for loop', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('% for v in x')
-        builder.addLine('  p')
-        builder.addLine('    input value=(v)')
-        builder.addLine('hr')
-        builder.finish()
-
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+% for v in x
+  p
+    input value=(v)
+hr
+''')
         assert.strictEqual(2, elements.length)
         applied: applyVariables(elements, {
             x: ['a', 'b', 'c'],
@@ -886,7 +878,6 @@ if true
     '''.trim()
         assert.strictEqual(EXPECT, renderHTMLApplied(applied))
 
-        builder.reset()
         assert.strictEqual(2, elements.length)
         applied_: applyVariables(elements, {
             x: {
@@ -910,15 +901,14 @@ if true
     if true
         it('decls 2 loop', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('% for k, v in x')
-        builder.addLine('  p')
-        builder.addLine('    span')
-        builder.addLine('      % v')
-        builder.addLine('    input value=(k)')
-        builder.addLine('hr')
-        builder.finish()
-
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+% for k, v in x
+  p
+    span
+      % v
+    input value=(k)
+hr
+''')
         assert.strictEqual(2, elements.length)
         applied: applyVariables(elements, {
             x: ['a', 'b', 'c'],
@@ -948,7 +938,6 @@ if true
         '''.trim()
         assert.strictEqual(EXPECT, renderHTMLApplied(applied))
 
-        builder.reset()
         assert.strictEqual(2, elements.length)
         applied_: applyVariables(elements, {
             x: {
@@ -977,15 +966,14 @@ if true
 
     it('compound expr', ():
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div')
-        builder.addLine('  % if !a || w < u + v')
-        builder.addLine('    input value=a disabled=(m && n)')
-        builder.addLine('  % else')
-        builder.addLine('    input value=b disabled=(m && n)')
-        builder.addLine('p')
-        builder.finish()
-
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+div
+  % if !a || w < u + v
+    input value=a disabled=(m && n)
+  % else
+    input value=b disabled=(m && n)
+p
+''')
         assert.strictEqual(2, elements.length)
 
         func applyTest(variables, expected, hint)
@@ -1055,11 +1043,10 @@ if true
 
     it('nested expr', ():
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div')
-        builder.addLine('  input value=(w / (u * (v + p)))')
-        builder.finish()
-
-        elements: builder.getElements()
+        elements: builder.buildTextToElements('''
+div
+  input value=(w / (u * (v + p)))
+''')
         assert.strictEqual(1, elements.length)
 
         func applyTest(variables, expected, hint)
@@ -1105,11 +1092,12 @@ if true
     if true
         it('build', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('container')
-        builder.addLine('    row')
-        builder.addLine('        grid size=4 offset=2')
-        builder.addLine('            input#myInput placeholder=hello-world disabled')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+container
+    row
+        grid size=4 offset=2
+            input#myInput placeholder=hello-world disabled
+''')
 
         EXPECT: '''
 <div class="container">
@@ -1121,20 +1109,21 @@ if true
 </div>
         '''.trim()
 
-        assert.strictEqual(EXPECT, renderBsf(builder.getElements()))
+        assert.strictEqual(EXPECT, renderBsf(elements))
 
     if true
         it('labels & icons', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('container')
-        builder.addLine('    row')
-        builder.addLine('        grid')
-        builder.addLine('            lbl#myLab')
-        builder.addLine('                :Default')
-        builder.addLine('            icon user')
-        builder.addLine('            lbl color=info')
-        builder.addLine('                :Info')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+container
+    row
+        grid
+            lbl#myLab
+                :Default
+            icon user
+            lbl color=info
+                :Info
+''')
 
         EXPECT: '''
 <div class="container">
@@ -1153,20 +1142,21 @@ if true
 </div>
         '''.trim()
 
-        assert.strictEqual(EXPECT, renderBsf(builder.getElements()))
+        assert.strictEqual(EXPECT, renderBsf(elements))
 
     if true
         it('form horizontal', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div.form-horizontal')
-        builder.addLine('    icon user')
-        builder.addLine('form-h')
-        builder.addLine('    row')
-        builder.addLine('        grid size=2')
-        builder.addLine('            icon file-o')
-        builder.addLine('        grid size=4 offset=2')
-        builder.addLine('            input#myInput placeholder=hello-world disabled')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+div.form-horizontal
+    icon user
+form-h
+    row
+        grid size=2
+            icon file-o
+        grid size=4 offset=2
+            input#myInput placeholder=hello-world disabled
+''')
 
         EXPECT: '''
 <div class="form-horizontal">
@@ -1186,17 +1176,19 @@ if true
 </form>
         '''.trim()
 
-        assert.strictEqual(EXPECT, renderBsf(builder.getElements()))
+        assert.strictEqual(EXPECT, renderBsf(elements))
 
     if true
         it('build grids', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('form-h')
-        builder.addLine('    row')
-        builder.addLine('        grid-c size=2')
-        builder.addLine('            :Count')
-        builder.addLine('        grid-s size=8')
-        builder.addLine('            % x')
+        elements: builder.buildTextToElements('''
+form-h
+    row
+        grid-c size=2
+            :Count
+        grid-s size=8
+            % x
+''')
 
         EXPECT: '''
 <form class="form-horizontal form-submit">
@@ -1211,23 +1203,24 @@ if true
 </form>
         '''.trim()
 
-        assert.strictEqual(EXPECT, renderBsf(builder.getElements(), {x: 91}))
+        assert.strictEqual(EXPECT, renderBsf(elements, {x: 91}))
 
     if true
         it('form controls', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('input')
-        builder.addLine('passwd')
-        builder.addLine('checkbox')
-        builder.addLine('  :Checkbox')
-        builder.addLine('radio')
-        builder.addLine('  :Radio')
-        builder.addLine('checkbox inline')
-        builder.addLine('  :Checkbox')
-        builder.addLine('radio inline')
-        builder.addLine('  :Radio')
-        builder.addLine('  icon user')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+input
+passwd
+checkbox
+  :Checkbox
+radio
+  :Radio
+checkbox inline
+  :Checkbox
+radio inline
+  :Radio
+  icon user
+''')
 
         EXPECT: '''
 <input class="form-control" type="text">
@@ -1256,20 +1249,22 @@ if true
 </label>
         '''.trim()
 
-        assert.strictEqual(EXPECT, renderBsf(builder.getElements()))
+        assert.strictEqual(EXPECT, renderBsf(elements))
 
     if true
         it('action controls', %)
         builder: core.HTMLBasisBuilder()
-        builder.addLine('div')
-        builder.addLine('  btn')
-        builder.addLine('    :A')
-        builder.addLine('  btn onclick="alert(0)"')
-        builder.addLine('    :B')
-        builder.addLine('  btn.disable-btn color=info')
-        builder.addLine('    :C')
-        builder.addLine('  button#myBtn')
-        builder.addLine('    :D')
+        elements: builder.buildTextToElements('''
+div
+  btn
+    :A
+  btn onclick="alert(0)"
+    :B
+  btn.disable-btn color=info
+    :C
+  button#myBtn
+    :D
+''')
 
         EXPECT: '''
 <div>
@@ -1288,15 +1283,16 @@ if true
 </div>
         '''.trim()
 
-        assert.strictEqual(EXPECT, renderBsf(builder.getElements()))
+        assert.strictEqual(EXPECT, renderBsf(elements))
 
     if true
         it('modals', %)
         builder: core.BootstrapFontawesomeBuilder()
-        builder.addLine('modal size=sm')
-        builder.addLine('  p')
-        builder.addLine('    :This is a modal')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+modal size=sm
+  p
+    :This is a modal
+''')
 
         EXPECT_A: '''
 <div class="modal fade" role="dialog" tabindex="-1" aria-labelledby="" aria-hidden="true">
@@ -1316,15 +1312,15 @@ if true
  </div>
 </div>
         '''.trim()
-        assert.strictEqual(EXPECT_A, renderBsf(builder.getElements()), 'A')
+        assert.strictEqual(EXPECT_A, renderBsf(elements), 'A')
 
-        builder.reset()
-        builder.addLine('modal')
-        builder.addLine('  title#myTitle')
-        builder.addLine('    :Modal title <3')
-        builder.addLine('  p')
-        builder.addLine('    :<3')
-        builder.finish()
+        elements_: builder.buildTextToElements('''
+modal
+  title#myTitle
+    :Modal title <3
+  p
+    :<3
+''')
 
         EXPECT_B: '''
 <div class="modal fade" role="dialog" tabindex="-1" aria-labelledby="" aria-hidden="true">
@@ -1347,21 +1343,22 @@ if true
  </div>
 </div>
         '''.trim()
-        assert.strictEqual(EXPECT_B, renderBsf(builder.getElements()), 'B')
+        assert.strictEqual(EXPECT_B, renderBsf(elements_), 'B')
 
     if true
         it('modals toggle', %)
         builder: core.BootstrapFontawesomeBuilder()
-        builder.addLine('modal-toggle#ii color=info target=abc')
-        builder.addLine('  :Def')
-        builder.finish()
+        elements: builder.buildTextToElements('''
+modal-toggle#ii color=info target=abc
+  :Def
+''')
 
         EXPECT: '''
 <button class="btn btn-info" id="ii" data-target="#abc" data-toggle="modal" type="button">
   Def
 </button>
         '''.trim()
-        assert.strictEqual(EXPECT, renderBsf(builder.getElements()))
+        assert.strictEqual(EXPECT, renderBsf(elements))
 
     if true
         it('nested branches', %)
@@ -1442,10 +1439,11 @@ if true
     if true
         it('lex', %)
         builder: core.Builder()
-        builder.addLine('input#q.x type=text disabled')
-        builder.addLine('')
         try
-            builder.addLine('`p class=m')
+            builder.buildTextToElements('''
+                    input#q.x type=text disabled
+                    `p class=m
+            ''')
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(3, $e.line)
@@ -1456,13 +1454,15 @@ if true
     if true
         it('syntax', %)
         builder: core.Builder()
-        builder.addLine('textarea')
-        builder.addLine('  :::')
-        builder.addLine('  the quick brown fox jumps over the lazy dog.')
-        builder.addLine('  the quick brown fox jumps over the lazy dog.')
-        builder.addLine('  :::')
         try
-            builder.addLine('p#=')
+            builder.buildTextToElements('''
+                textarea
+                  :::
+                  the quick brown fox jumps over the lazy dog.
+                  the quick brown fox jumps over the lazy dog.
+                  :::
+                  p#=
+            '''.trim())
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(6, $e.line)
@@ -1471,9 +1471,8 @@ if true
             assert.strictEqual('=', $e.object.image)
             assert.strictEqual('eq', $e.object.type)
 
-        builder.reset()
         try
-            builder.addLine('p.(a b)')
+            builder.buildTextToElements('p.(a b)')
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(1, $e.line)
@@ -1482,22 +1481,22 @@ if true
             assert.strictEqual('b', $e.object.image)
             assert.strictEqual('ident', $e.object.type)
 
-        builder.reset()
         try
-            builder.addLine('div')
-            builder.addLine('  p.(a')
-            builder.finish()
+            builder.buildTextToElements('''
+                div
+                    p.(a
+            '''.trim())
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(2, $e.line)
             assert.strictEqual('Unexpected EOF, expect )', $e.message)
             assert.strictEqual('am', $e.type)
 
-        builder.reset()
         try
-            builder.addLine('div')
-            builder.addLine('  p.(a]')
-            builder.finish()
+            builder.buildTextToElements('''
+                div
+                    p.(a]
+            '''.trim())
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(2, $e.line)
@@ -1509,12 +1508,12 @@ if true
         it('elements', %)
         builder: core.Builder()
 
-        builder.addLine('div')
-        builder.addLine('  input')
         try
-            builder.addLine('    p')
-            builder.finish()
-            renderHTML(builder.getElements())
+            e: builder.buildAndRenderText('''
+div
+  input
+    p
+'''.trim())
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(2, $e.line)
@@ -1522,11 +1521,8 @@ if true
             assert.strictEqual('element', $e.type)
             assert.strictEqual('input', $e.object.tag)
 
-        builder.reset()
         try
-            builder.addLine('p#a.b#c')
-            builder.finish()
-            renderHTML(builder.getElements())
+            builder.buildTextToElements('p#a.b#c')
             assert.ok(false, 'Expect error')
         catch
             assert.strictEqual(1, $e.line)

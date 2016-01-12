@@ -1223,48 +1223,64 @@ func indentLv(string)
 func _findFuncName(prefix, tag)
     return prefix + tag.replace(/-/g, '_')
 
-class Builder
-    ctor(variables)
-        this.variables: variables if variables else {}
-        this.reset()
-
-    func reset()
-        this.lines: 0
-        this._root: FakeRoot()
+class SyntaxBuilder
+    ctor(builder)
+        this.builder: builder
+        this.lineno: 0
         this._stack: null
+        this._root: FakeRoot()
 
     func getElements()
         return this._root.children
+
+    func _applyStack(indentLevel)
+        this._stack: AutomationStack(this.getAppendPoint(indentLevel), indentLevel, this.builder)
+
+    func _initStackIfNull(indentLevel)
+        if this._stack = null
+            return this._applyStack(indentLevel)
+        if indentLevel < this._stack.indentLevel
+            this._stack.forceFinish()
+            return this._applyStack(indentLevel)
+
+    func getAppendPoint(indentLevel)
+        return this._root.getAppendPoint(indentLevel)
+
+    func addLine(string)
+        this.lineno: this.lineno + 1
+        this._initStackIfNull(indentLv(string))
+        this._stack.addLine(string, this.lineno)
+        if this._stack.tryFinish()
+            this._stack: null
+
+    func finish()
+        if this._stack
+            this._stack.forceFinish()
+        this._root.finish(this.builder)
+
+class Builder
+    ctor(variables)
+        this.variables: variables if variables else {}
 
     func buildAndRenderText(text)
         return this.applyAndRender(this.buildTextToElements(text))
 
     func buildTextToElements(text)
-        text.split('\n') |: this.addLine($)
-        this.finish()
-        r: this.getElements()
-        this.reset()
-        return r
+        b: SyntaxBuilder(this)
+        text.split('\n') |: b.addLine($)
+        b.finish()
+        return b.getElements()
 
     func applyVariablesTo(elements)
         root: FakeRoot()
         elements |: root.append($.applyVariables(root, this))
         return root.children
 
-    func applyVariablesToOwn()
-        return this.applyVariablesTo(this.getElements())
-
     func renderApplied(elements)
         return (elements |: $.render(this)).join(this.eol())
 
     func applyAndRender(elements)
         return this.renderApplied(this.applyVariablesTo(elements))
-
-    func applyAndRenderOwn(elements)
-        return this.applyAndRender(this.getElements())
-
-    func getAppendPoint(indentLevel)
-        return this._root.getAppendPoint(indentLevel)
 
     func _applyDictForData(element, dictVal)
         dictVal |: element.attr('data-' + $k, $.apply(this).toString())
@@ -1281,33 +1297,6 @@ class Builder
 
     func applyDictForCustomAttr(element, attr, dictVal)
         dictVal.throw_('Dict value not handled for ' + attr + ' of ' + element.tag)
-
-    func _initStackIfNull(indentLevel)
-        self: this
-        func applyStack()
-            self._stack: AutomationStack(
-                self.getAppendPoint(indentLevel), indentLevel, self)
-
-        if this._stack = null
-            return applyStack()
-        if indentLevel < this._stack.indentLevel
-            this._stack.forceFinish()
-            return applyStack()
-
-    func addLine(string)
-        this.lines: this.lines + 1
-        return this.addLineWithLevel(string, indentLv(string))
-
-    func addLineWithLevel(string, indentLevel)
-        this._initStackIfNull(indentLevel)
-        this._stack.addLine(string, this.lines)
-        if this._stack.tryFinish()
-            this._stack: null
-
-    func finish()
-        if this._stack
-            this._stack.forceFinish()
-        this._root.finish(this)
 
     func onTagBegin(element, stack)
         f: _findFuncName('_ontagbegin_', element.tag)
