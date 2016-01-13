@@ -2,16 +2,16 @@ assert: require('assert')
 core: require('./topaz')
 
 func renderHTML(elements, variables)
-    return core.HTMLBasisBuilder(variables).applyAndRender(elements)
+    return core.HTMLBasisBuilder(variables).applyAndRenderSync(elements)
 
 func renderHTMLApplied(elements)
     return core.HTMLBasisBuilder().renderApplied(elements)
 
 func renderBsf(elements, variables)
-    return core.BootstrapFontawesomeBuilder(variables).applyAndRender(elements)
+    return core.BootstrapFontawesomeBuilder(variables).applyAndRenderSync(elements)
 
 func applyVariables(elements, variables)
-    return core.Builder(variables).applyVariablesTo(elements)
+    return core.Builder(variables).applyVariablesToSync(elements)
 
 if true
     describe('build static', %)
@@ -92,7 +92,7 @@ form
                 return element
 
         testBuilder: TestBuilder()
-        applied: e.applyVariables(null, testBuilder)
+        applied: e.applyVariablesSync(null, testBuilder)
         assert.strictEqual('input', applied.tag)
         assert.strictEqual('q', applied.attributes.id)
         assert.strictEqual('text', applied.attributes.type)
@@ -324,7 +324,7 @@ if true
         assert.strictEqual('input', e.tag)
         assert.strictEqual('vv', e.attributes.value.name)
 
-        applied: e.applyVariables(null, core.Builder({vv: 'The quick brown input'}))
+        applied: e.applyVariablesSync(null, core.Builder({vv: 'The quick brown input'}))
         assert.strictEqual('input', applied.tag)
         assert.strictEqual('The quick brown input', applied.attributes.value)
 
@@ -360,7 +360,7 @@ if true
                                               'placeholder=(c.d * -2 + e.f * 3 % 2)')
         assert.strictEqual(1, elements.length)
 
-        applied: elements[0].applyVariables(null, core.Builder({
+        applied: elements[0].applyVariablesSync(null, core.Builder({
             a: 3,
             b: 2,
             c: {d: -2},
@@ -374,7 +374,7 @@ if true
 
         elements_: builder.buildTextToElements('input value=(1 + 1 - 2)')
         assert.strictEqual(1, elements_.length)
-        applied_: elements_[0].applyVariables(null, core.Builder())
+        applied_: elements_[0].applyVariablesSync(null, core.Builder())
 
         EXPECT: '<input value="0">'
         assert.strictEqual(EXPECT, applied_.render(core.HTMLBasisBuilder()))
@@ -389,7 +389,7 @@ div
 ''')
         assert.strictEqual(1, elements.length)
 
-        applied: elements[0].applyVariables(null, core.Builder({
+        applied: elements[0].applyVariablesSync(null, core.Builder({
             x: 0,
             y: 1,
         }))
@@ -399,7 +399,7 @@ div
         assert.strictEqual('input', applied.children[1].tag)
         assert.strictEqual('abd', applied.children[1].attributes.value)
 
-        applied_: elements[0].applyVariables(null, core.Builder({
+        applied_: elements[0].applyVariablesSync(null, core.Builder({
             x: 1,
             y: 0,
         }))
@@ -441,7 +441,7 @@ div
             u: {val: true},
             v: {val: false},
         })
-        applied_zptf: elements[0].applyVariables(null, zptf_builder)
+        applied_zptf: elements[0].applyVariablesSync(null, zptf_builder)
         assert.strictEqual(2, applied_zptf.children.length)
         assert.strictEqual('i', applied_zptf.children[0].tag)
         assert.strictEqual('p', applied_zptf.children[1].tag)
@@ -463,7 +463,7 @@ div
             u: {val: true},
             v: {val: false},
         })
-        applied_zmtf: elements[0].applyVariables(null, zmtf_builder)
+        applied_zmtf: elements[0].applyVariablesSync(null, zmtf_builder)
         assert.strictEqual(2, applied_zmtf.children.length)
         assert.strictEqual('span', applied_zmtf.children[0].tag)
         assert.strictEqual('p', applied_zmtf.children[1].tag)
@@ -479,7 +479,7 @@ div
             parent: null,
         }], zmtf_builder.triggers)
 
-        applied_zmtt: elements[0].applyVariables(null, core.Builder({
+        applied_zmtt: elements[0].applyVariablesSync(null, core.Builder({
             x: {val: 0},
             y: {val: -1},
             u: {val: true},
@@ -489,7 +489,7 @@ div
         assert.strictEqual('span', applied_zmtt.children[0].tag)
         assert.strictEqual('pre', applied_zmtt.children[1].tag)
 
-        applied_zpff: elements[0].applyVariables(null, core.Builder({
+        applied_zpff: elements[0].applyVariablesSync(null, core.Builder({
             x: {val: 0},
             y: {val: 1},
             u: {val: false},
@@ -499,7 +499,7 @@ div
         assert.strictEqual('i', applied_zpff.children[0].tag)
         assert.strictEqual('p', applied_zpff.children[1].tag)
 
-        applied_zmff: elements[0].applyVariables(null, core.Builder({
+        applied_zmff: elements[0].applyVariablesSync(null, core.Builder({
             x: {val: 0},
             y: {val: -1},
             u: {val: false},
@@ -509,7 +509,7 @@ div
         assert.strictEqual('span', applied_zmff.children[0].tag)
         assert.strictEqual('p', applied_zmff.children[1].tag)
 
-        applied_zpft: elements[0].applyVariables(null, core.Builder({
+        applied_zpft: elements[0].applyVariablesSync(null, core.Builder({
             x: {val: 0},
             y: {val: 1},
             u: {val: false},
@@ -519,7 +519,7 @@ div
         assert.strictEqual('span', applied_zpft.children[0].tag)
         assert.strictEqual('p', applied_zpft.children[1].tag)
 
-        applied_zmft: elements[0].applyVariables(null, core.Builder({
+        applied_zmft: elements[0].applyVariablesSync(null, core.Builder({
             x: {val: 0},
             y: {val: 1},
             u: {val: false},
@@ -562,7 +562,7 @@ div
         builder: TestBuilder({
             x: ['a', 'b', 'c'],
         })
-        elements[0].applyVariables(null, builder)
+        elements[0].applyVariablesSync(null, builder)
 
         assert.deepEqual([{
             tag: 'span',
@@ -607,6 +607,32 @@ div
 </div>
     '''.trim()
         assert.strictEqual(EXPECT, renderHTML(elements, {x: "^<v>"}))
+
+    if true
+        it('dict values', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+select
+  % for p in [{id: 0, name: 'Alice', age: aliceAge}, {id: 1, name: 'Bob', age: 17}]
+    option value=(p.id)
+      % "Name: " + p.name + ", age: " + p.age
+div
+''')
+        assert.strictEqual(2, elements.length)
+
+        EXPECT: '''
+<select>
+  <option value="0">
+      Name: Alice, age: 23
+  </option>
+  <option value="1">
+      Name: Bob, age: 17
+  </option>
+</select>
+<div>
+</div>
+    '''.trim()
+        assert.strictEqual(EXPECT, renderHTML(elements, {aliceAge: 23}))
 
     if true
         it('property', %)
@@ -662,7 +688,7 @@ div
             y: '#ccd',
             e: '"',
         })
-        r: builder.buildAndRenderText('''
+        r: builder.buildAndRenderTextSync('''
         button data={id: 2 + x, target: 'my-target', esc: e} style={
             color: 'white',
             background-color: y
@@ -678,7 +704,7 @@ div
     if true
         it('apply null', %)
         builder: core.HTMLBasisBuilder({ x: null })
-        r: builder.buildAndRenderText('''
+        r: builder.buildAndRenderTextSync('''
         button#('a' if x == null else 'b').('c' if x != null else 'd').(null)
             :squeeze me
         '''.trim())
@@ -977,6 +1003,38 @@ hr
 <hr>
         '''.trim()
         assert.strictEqual(EXPECT_, renderHTMLApplied(applied_))
+
+    if true
+        it('build include', %)
+        builder: core.Builder()
+        e: builder.buildTextToElements('''
+% if x
+    % include 'path/a' {a: 10, b: 20}
+% else
+    % include path-b
+'''.trim())
+        assert.strictEqual(1, e.length)
+        ifE: e[0]
+        assert.strictEqual('x', ifE.predicate.name)
+
+        assert.strictEqual(1, ifE.consequence.length)
+        consq: ifE.consequence[0]
+        assert.strictEqual('path/a', consq.path.value)
+        assert.deepEqual({
+            a: {
+                line: 2,
+                value: 10,
+            },
+            b: {
+                line: 2,
+                value: 20,
+            },
+        }, consq.values.dict)
+
+        assert.strictEqual(1, ifE.alternative.length)
+        alter: ifE.alternative[0]
+        assert.strictEqual('path-b', alter.path.value)
+        assert.deepEqual({}, alter.values.dict)
 
     it('compound expr', ():
         builder: core.HTMLBasisBuilder()
@@ -1448,6 +1506,113 @@ p
             v: '',
         }), 'FF')
 
+describe('include', ():
+    class IncludeTestBuilder: core.Builder
+        ctor(templs, var) super(var)
+            this.templs: templs
+
+        func doIncludeSync(path)
+            return this.templs[path]
+
+    if true
+        it('sync static', %)
+        builder: IncludeTestBuilder({
+            t: '''textarea\ninput''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % include t
+    % text
+'''.trim())
+
+        applied: builder.applyVariablesToSync(e)
+        assert.strictEqual(1, applied.length)
+        div: applied[0]
+        assert.strictEqual('div', div.tag)
+        assert.strictEqual(3, div.children.length)
+        assert.strictEqual('textarea', div.children[0].tag)
+        assert.strictEqual('input', div.children[1].tag)
+        assert.strictEqual('included', div.children[2].text)
+
+        if true
+            builder.resetVariables({text: 'included again'})
+            applied: builder.applyVariablesToSync(e)
+            assert.strictEqual(1, applied.length)
+            div: applied[0]
+            assert.strictEqual('div', div.tag)
+            assert.strictEqual(3, div.children.length)
+            assert.strictEqual('textarea', div.children[0].tag)
+            assert.strictEqual('input', div.children[1].tag)
+            assert.strictEqual('included again', div.children[2].text)
+
+    if true
+        it('sync branch', %)
+        builder: IncludeTestBuilder({
+            t: '''input\nbutton''',
+            u: '''p''',
+        }, {text: 'included', pred: true})
+
+        e: builder.buildTextToElements('''
+div
+    % if pred
+        % include t
+    % else
+        % include u
+    % text
+'''.trim())
+        applied: builder.applyVariablesToSync(e)
+        assert.strictEqual(1, applied.length)
+        div: applied[0]
+        assert.strictEqual('div', div.tag)
+        assert.strictEqual(3, div.children.length)
+        assert.strictEqual('input', div.children[0].tag)
+        assert.strictEqual('button', div.children[1].tag)
+        assert.strictEqual('included', div.children[2].text)
+
+        if true
+            builder.resetVariables({text: 'included again', pred: false})
+            applied: builder.applyVariablesToSync(e)
+            assert.strictEqual(1, applied.length)
+            div: applied[0]
+            assert.strictEqual('div', div.tag)
+            assert.strictEqual(2, div.children.length)
+            assert.strictEqual('p', div.children[0].tag)
+            assert.strictEqual('included again', div.children[1].text)
+
+    if true
+        it('sync loop with vars', %)
+        builder: IncludeTestBuilder({
+            u: '''input data={id: id} value=(value)''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % for v in [{id: 0, value: 'The quick'}, {id: 1}]
+        % include u v
+    % text
+'''.trim())
+        applied: builder.applyVariablesToSync(e)
+        assert.strictEqual(1, applied.length)
+        div: applied[0]
+        assert.strictEqual('div', div.tag)
+        assert.strictEqual(3, div.children.length)
+        assert.strictEqual('input', div.children[0].tag)
+        assert.deepEqual({
+            id: null,
+            'data-id': '0',
+            value: 'The quick',
+        }, div.children[0].attributes)
+        assert.strictEqual('input', div.children[1].tag)
+        assert.deepEqual({
+            id: null,
+            'data-id': '1',
+            value: undefined,
+        }, div.children[1].attributes)
+        assert.strictEqual('included', div.children[2].text)
+
+)
+
 if true
     describe('errors', %)
     if true
@@ -1521,9 +1686,8 @@ if true
     if true
         it('elements', %)
         builder: core.Builder()
-
         try
-            e: builder.buildAndRenderText('''
+            e: builder.buildAndRenderTextSync('''
 div
   input
     p
@@ -1543,3 +1707,15 @@ div
             assert.strictEqual('Duplicate id', $e.message)
             assert.strictEqual('element', $e.type)
             assert.strictEqual('p', $e.object.tag)
+
+    if true
+        it('include syntax', %)
+        builder: core.Builder()
+        try
+            e: builder.buildAndRenderTextSync('% include a :')
+            assert.ok(false, 'Expect error')
+        catch
+            assert.strictEqual(1, $e.line)
+            assert.strictEqual('Unexpected', $e.message)
+            assert.strictEqual('token', $e.type)
+            assert.strictEqual(':', $e.object.image)

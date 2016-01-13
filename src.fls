@@ -214,15 +214,15 @@ class Lookup: ValueBase
         return obj[key]
 
 class ListValue: ValueBase
-    ctor(line, list) super(line)
-        this.list: list
+    ctor(line) super(line)
+        this.list: []
 
     func apply(builder)
         return this.list |: $.apply(builder)
 
 class DictValue: ValueBase
-    ctor(line, dict) super(line)
-        this.dict: dict
+    ctor(line) super(line)
+        this.dict: {}
 
     func apply(builder)
         r: {}
@@ -278,7 +278,7 @@ class ElementBase
     func finish(builder)
         0
 
-    func applyVariables(parent, builder, newIndent)
+    func applyVariablesSync(parent, builder, newIndent)
         return this
 
 class CompoundElement: ElementBase
@@ -365,7 +365,7 @@ class AppliedTagElement: TagElementBase
     func addClass(cls)
         this.classes.push(cls)
 
-    func applyVariables(p, builder)
+    func applyVariablesSync(p, builder)
         return this
 
     func render(r)
@@ -419,10 +419,10 @@ class TagElement: TagElementBase
     func addClassExpr(cls)
         this.classes.push(cls)
 
-    func applyVariables(parent, builder, newIndent)
+    func applyVariablesSync(parent, builder, newIndent)
         element: AppliedTagElement(parent,
                                    this.indentLevel
-                                           if typeof newIndent = 'undefined'
+                                           if newIndent = undefined
                                            else newIndent,
                                    this.line, this.tag)
         this.attributes |:
@@ -436,7 +436,7 @@ class TagElement: TagElementBase
             r: $.apply(builder)
             if r
                 element.addClass(r)
-        this.children |: element.append($.applyVariables(element, builder))
+        this.children |: element.append($.applyVariablesSync(element, builder))
         return builder.onTagApplied(element)
 
 class TextBase: ElementBase
@@ -482,7 +482,7 @@ class ValueElement: ElementBase
     func append(child)
         this.throw_('Unable to append to text')
 
-    func applyVariables(parent, builder, ni)
+    func applyVariablesSync(parent, builder, ni)
         value: this.value.apply(builder)
         return TextLineElement(
             this.parent, this.indentLevel if ni = undefined else ni, this.line, toString(value))
@@ -493,12 +493,12 @@ class IfElement: CompoundElement
         this.consequence: this.children
         this.alternative: []
 
-    func applyVariables(parent, builder, ni)
-        newIndent: this.indentLevel if typeof ni = 'undefined' else ni
+    func applyVariablesSync(parent, builder, ni)
+        newIndent: this.indentLevel if ni = undefined else ni
         if this.predicate.test(builder)
-            this.consequence |: parent.append($.applyVariables(parent, builder, newIndent))
+            this.consequence |: parent.append($.applyVariablesSync(parent, builder, newIndent))
         else
-            this.alternative |: parent.append($.applyVariables(parent, builder, newIndent))
+            this.alternative |: parent.append($.applyVariablesSync(parent, builder, newIndent))
         return null
 
     func attachElse(_)
@@ -510,13 +510,26 @@ class ForElement: CompoundElement
         this.elementName: elementName
         this.object: object
 
-    func applyVariables(parent, builder, ni)
-        newIndent: this.indentLevel if typeof ni = 'undefined' else ni
+    func applyVariablesSync(parent, builder, ni)
+        newIndent: this.indentLevel if ni = undefined else ni
         this.object.apply(builder) |:
             if this.keyName
                 builder.setValue(this.keyName, $k)
             builder.setValue(this.elementName, $)
-            this.children |: parent.append($.applyVariables(parent, builder, newIndent))
+            this.children |: parent.append($.applyVariablesSync(parent, builder, newIndent))
+        return null
+
+class IncludeElement: ElementBase
+    ctor(parent, indentLevel, path, values) super(parent, indentLevel, path.line)
+        this.path: path
+        this.values: values
+
+    func getAppendPoint(child)
+        return this.parent
+
+    func applyVariablesSync(parent, builder, newIndent)
+        builder.includeApplySync(parent, this, this.path.apply(builder),
+                                 this.values.apply(builder)) |: parent.append($)
         return null
 
 class Automation
@@ -584,6 +597,7 @@ KEYWORDS: {
     'if': true,
     'else': true,
     'null': true,
+    'include': true,
 }
 
 class DynamicDataAutomationBase: Automation
@@ -624,11 +638,13 @@ class ArithAutomation: DynamicDataAutomationBase
         this.stack.top().push(token)
 
     func finish()
+        if this._empty() && this.allowEmpty
+            return this.stack.reduced(EmptyExpr())
         this._reduceBinary(-1)
         this.stack.reduced(this._exprStack[0])
 
     func finished()
-        return !this._needFactor
+        return !this._needFactor || (this.allowEmpty && this._empty())
 
     func _empty()
         return this._exprStack.length = 0 && this._opStack.length = 0
@@ -722,6 +738,13 @@ class ArithAutomation: DynamicDataAutomationBase
             self._push_op(t)
             self._pushValue(expr)
 
+    func _push_openbrace(token)
+        ifnot this._needFactor
+            token.unexpected()
+        self: this
+        this.reduced: (expr): self._pushValue(expr)
+        this.stack.push(DictAutomation(this.stack, token.line, 'closebrace', '}'))
+
     func _pushkw_null(token)
         ifnot this._needFactor
             token.unexpected()
@@ -788,7 +811,7 @@ class ConditionalExprAutomation: DynamicDataAutomationBase
 
 class ListAutomation: ArithWrapAutomation
     ctor(stack, line, closerType, closerImage) super(stack, line, closerType, closerImage)
-        this._expr: ListValue(line, [])
+        this._expr: ListValue(line)
 
     func activated()
         this.stack.push(ArithAutomation(this.stack, this.line, true))
@@ -829,7 +852,7 @@ class DictItemAutomation: DynamicDataAutomationBase
 
 class DictAutomation: ArithWrapAutomation
     ctor(stack, line, closerType, closerImage) super(stack, line, closerType, closerImage)
-        this._expr: DictValue(line, {})
+        this._expr: DictValue(line)
         this._key: null
 
     func activated()
@@ -902,15 +925,19 @@ class CtrlFlowAutomation: DynamicDataAutomationBase
             self.parent.append(IfElement(self.parent, self.stack.indentLevel, expr))
             self._finished: true
 
-    func _pushkw_for(token)
-        this.stack.pop()
-        this.stack.push(ForHeadAutomation(token, this.stack, this.parent))
-
     func _pushkw_else(token)
         ifnot this.parent.lastChild()
             token.throw_('Else clause not match an if')
         this.parent.lastChild().attachElse(token)
         this._finished: true
+
+    func _pushkw_for(token)
+        this.stack.pop()
+        this.stack.push(ForHeadAutomation(token, this.stack, this.parent))
+
+    func _pushkw_include(token)
+        this.stack.pop()
+        this.stack.push(IncludeAutomation(this.stack, this.parent))
 
     func _pushExprAm(token)
         self: this
@@ -928,6 +955,48 @@ class CtrlFlowAutomation: DynamicDataAutomationBase
 
     func forceFinish()
         this.parent.throw_('''Unexpected `%' attached''')
+
+class IncludeAutomation: Automation
+    ctor(stack, parent) super(stack)
+        this.parent: parent
+        this._includePath: null
+        this._values: DictValue(0)
+
+    func _setIncludePath(path)
+        this._includePath: path
+        this._push_ident: (token): token.unexpected()
+        this._push_value: (token): token.unexpected()
+        this._push_openparen: (token): token.unexpected()
+
+        this.stack.push(ArithAutomation(this.stack, path.line, true))
+        self: this
+        self.reduced: (expr):
+            ifnot expr.empty()
+                self._values: expr
+            self.finish()
+
+    func _push_ident(token)
+        this._setIncludePath(LiteralValue(token.line, token.image))
+
+    func _push_value(token)
+        this._setIncludePath(LiteralValue(token.line, eval(token.image).toString()))
+
+    func _push_openparen(token)
+        self: this
+        this.stack.push(ArithWrapAutomation(this.stack, token.line, 'closeparen', ')'))
+        this.reduced: (expr): self._setIncludePath(expr)
+
+    func finish()
+        this.parent.append(IncludeElement(this.parent, this.stack.indentLevel,
+                                          this._includePath, this._values))
+        super.finish()
+
+    func finished()
+        return this._includePath != null
+
+    func forceFinish()
+        ifnot this.finished()
+            this.throw_('Expect include path')
 
 class TagAutomation: Automation
     ctor(stack, element) super(stack)
@@ -1272,10 +1341,11 @@ class SyntaxBuilder
 
 class Builder
     ctor(variables)
-        this.variables: variables if variables else {}
+        this.varStack: [variables if variables else {}]
+        this.cachedInclude: {}
 
-    func buildAndRenderText(text)
-        return this.applyAndRender(this.buildTextToElements(text))
+    func buildAndRenderTextSync(text)
+        return this.applyAndRenderSync(this.buildTextToElements(text))
 
     func buildTextToElements(text)
         b: SyntaxBuilder(this)
@@ -1283,22 +1353,45 @@ class Builder
         b.finish()
         return b.getElements()
 
-    func applyVariablesTo(elements)
+    func applyVariablesToSync(elements)
         root: FakeRoot()
-        elements |: root.append($.applyVariables(root, this))
+        elements |: root.append($.applyVariablesSync(root, this))
         return root.children
+
+    func clearCachedInclude()
+        this.cachedInclude: {}
+
+    func includeApplySync(parent, incl, path, variables)
+        ifnot this.cachedInclude[path]
+            t: this.doIncludeSync(path)
+            if t = undefined || t = null
+                incl.throw_('include path ' + path + ' returns ' + t)
+            this.cachedInclude[path]: this.buildTextToElements(t)
+        this.varStack.unshift(variables)
+        this.cachedInclude[path] |: parent.append($.applyVariablesSync(parent, this))
+        this.varStack.shift()
+
+    func doIncludeSync(path)
+        throw 'Builder.doIncludeApplySync not implemented'
 
     func renderApplied(elements)
         return (elements |: $.render(this)).join(this.eol())
 
-    func applyAndRender(elements)
-        return this.renderApplied(this.applyVariablesTo(elements))
+    func applyAndRenderSync(elements)
+        return this.renderApplied(this.applyVariablesToSync(elements))
 
     func _applyDictForData(element, dictVal)
-        dictVal |: element.attr('data-' + $k, $.apply(this).toString())
+        dictVal |:
+            v: $.apply(this)
+            if v != undefined && v != null
+                element.attr('data-' + $k, v.toString())
 
     func _applyDictForStyle(element, dictVal)
-        element.attr('style', (dictVal |: [$k, $.apply(this)].join(':')).join(';'))
+        element.attr('style', (dictVal |:
+            v: $.apply(this)
+            if v != undefined && v != null
+                $result.push([$k, $.apply(this)].join(':'))
+        ).join(';'))
 
     func applyDictForAttr(element, attr, dictVal)
         if attr = 'data'
@@ -1398,13 +1491,13 @@ class Builder
         self[_findFuncName('_rendertag_', tagname)]: (element): f(element, self)
 
     func getValue(name)
-        return this.variables[name]
+        return this.varStack[0][name]
 
     func setValue(name, value)
-        this.variables[name]: value
+        this.varStack[0][name]: value
 
     func resetVariables(variables)
-        this.variables: variables
+        this.varStack: [variables]
 
 class HTMLBasisBuilder: Builder
     ctor(variables) super(variables)
@@ -1476,7 +1569,7 @@ class HTMLBasisBuilder: Builder
         return link
 
 func renderHTMLBasis(text, variables)
-    return HTMLBasisBuilder(variables).buildAndRenderText(text)
+    return HTMLBasisBuilder(variables).buildAndRenderTextSync(text)
 
 export Builder: Builder
 export HTMLBasisBuilder: HTMLBasisBuilder
@@ -1698,7 +1791,7 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
         return label
 
 func renderBootstrap(text, variables)
-    return BootstrapFontawesomeBuilder(variables).buildAndRenderText(text)
+    return BootstrapFontawesomeBuilder(variables).buildAndRenderTextSync(text)
 
 export BootstrapFontawesomeBuilder: BootstrapFontawesomeBuilder
 export renderBootstrap: renderBootstrap
