@@ -615,12 +615,11 @@ class DynamicDataAutomationBase: Automation
         this._pushIdent(token)
 
 class ArithAutomation: DynamicDataAutomationBase
-    ctor(stack, line, allowEmpty) super(stack)
+    ctor(stack, line) super(stack)
         this._needFactor: true
         this._exprStack: []
         this._opStack: []
         this.line: line
-        this.allowEmpty: allowEmpty
         ['comma', 'closeparen', 'closebracket', 'closebrace'] |: this._setFollowing($)
 
     func _setFollowing(tokenType)
@@ -630,24 +629,17 @@ class ArithAutomation: DynamicDataAutomationBase
         this._finishAt(token)
 
     func _finishAt(token)
-        if this._empty() && this.allowEmpty
-            return this.stack.tokenAfterReduced(EmptyExpr(token.line), token)
         if this._exprStack.length = 0
             token.unexpected()
         this.finish()
         this.stack.top().push(token)
 
     func finish()
-        if this._empty() && this.allowEmpty
-            return this.stack.reduced(EmptyExpr())
         this._reduceBinary(-1)
         this.stack.reduced(this._exprStack[0])
 
     func finished()
-        return !this._needFactor || (this.allowEmpty && this._empty())
-
-    func _empty()
-        return this._exprStack.length = 0 && this._opStack.length = 0
+        return !this._needFactor
 
     func forceFinish()
         ifnot this.finished()
@@ -759,6 +751,26 @@ class ArithAutomation: DynamicDataAutomationBase
         self: this
         self.reduced: (expr): self._pushValue(expr)
 
+class ArithAutomationAllowEmpty: ArithAutomation
+    ctor(stack, line) super(stack, line)
+        0
+
+    func _finishAt(token)
+        if this._empty()
+            return this.stack.tokenAfterReduced(EmptyExpr(token.line), token)
+        return super._finishAt(token)
+
+    func finish()
+        if this._empty()
+            return this.stack.reduced(EmptyExpr())
+        return super.finish()
+
+    func finished()
+        return this._empty() || super.finished()
+
+    func _empty()
+        return this._exprStack.length = 0 && this._opStack.length = 0
+
 class ArithWrapAutomation: DynamicDataAutomationBase
     ctor(stack, line, closerType, closerImage) super(stack)
         this.line: line
@@ -814,7 +826,7 @@ class ListAutomation: ArithWrapAutomation
         this._expr: ListValue(line)
 
     func activated()
-        this.stack.push(ArithAutomation(this.stack, this.line, true))
+        this.stack.push(ArithAutomationAllowEmpty(this.stack, this.line))
 
     func _push_comma()
         this.activated()
@@ -968,7 +980,7 @@ class IncludeAutomation: Automation
         this._push_value: (token): token.unexpected()
         this._push_openparen: (token): token.unexpected()
 
-        this.stack.push(ArithAutomation(this.stack, path.line, true))
+        this.stack.push(ArithAutomationAllowEmpty(this.stack, path.line))
         self: this
         self.reduced: (expr):
             ifnot expr.empty()
