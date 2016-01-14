@@ -184,6 +184,18 @@ Syntax for an object-based loop is like
 
 If you iterate over a list, `key` comes as "0", "1", etc, and `value` comes as each element in the list. If you iterate over an object otherwise, `key` comes as the property names of the object and `value` as the property values.
 
+### Include
+
+To include another template and place the inside elements at the position of the include.
+
+Syntax
+
+    % include path [templ_args]
+
+The `path` should be a string, identifier (the same as a string), or an expression. The optional `templ_args` should be a dictionary value, which will be applied to the included template.
+
+For more detail, please go to read include API.
+
 ## APIs
 
 ### Quick Render APIs
@@ -195,7 +207,7 @@ If you iterate over a list, `key` comes as "0", "1", etc, and `value` comes as e
 
 Both of them render template into HTML. The difference is `renderBootstrap` does some tag overriding for twitter bootstrap and font-awesome.
 
-### Builders
+### Detailed Render APIS
 
 * `Builder(vars={})`
 * `HTMLBasisBuilder(vars={})`
@@ -207,11 +219,23 @@ Each of the `Builder` instance has similar APIs but they does different tag over
 
 * `buildAndRenderText(text)`: renders `text` into HTML
 * `buildTextToElementsSync(text)`: builds `text` into elements tree and returns it, without applying template variables
+* `buildTextToElements(text, callback(error, result))`: asynchronous version of `buildTextToElementsSync`
 * `applyVariablesToSync(elements)`: apply template variables to elements and returns the applied
+* `applyVariablesTo(elements, callback(error, result))`: asynchronous version of `applyVariablesToSync`
 * `renderApplied(elements)`: render applied elements into HTML
 * `resetVariables(vars)`: reset the template variables of the builder
 * `setAppliedFunc(tagName, callback(element, builder))`: set a callback function that is called to each element of `tagName` after applied; the callback shall return an applied element
 * `setRenderFunc(tagName, callback(element, builder))`: set a callback function that is called to render each element of `tagName` before rendering to text; the callback shall return a render result as string
+
+### Callback for Include
+
+If `% include` is used in a template, the builder should implement either `includeTemplateSync` or `includeTemplate`, depends on which apply function (`applyVariablesToSync` or `applyVariablesTo`) is used to apply variables to elements.
+
+The `includeTemplateSync(path)` function takes the template **path** as parameter and should return a template string as result; and the `includeTemplate(path, callback(error, result))` takes the template path as parameter and should pass a template string to the callback as the second argument.
+
+The **path** parameter don't have to be mapped to any file system path or URL, as they are just a template name for the builder. Once a template is loaded, it will be cached in the builder, but can be cleared at once by `Builder.clearCachedInclude()`.
+
+The functions `renderHTMLBasis` and `renderBootstrap` use the default builder so they cannot handle `include` elements.
 
 ## Built-in Tag Overridings
 
@@ -239,5 +263,7 @@ Each of the `Builder` instance has similar APIs but they does different tag over
 * `grid [size=?] [offset=?]`: generates a `div` tag with class `col-sm-[size]` (default `size` is 4), `col-offset-[offset]` if `offset` is set and greater than 0
 * `grid-s [size=?] [offset=?]` / `grid-c [size=?] [offset=?]`: generates a `label` tag, with `size` and `offset` args affecting the same way with `grid` tag, and `-s` contains class `form-control-static` while `-c` contains `control-label`
 * `lbl [color=?]`: generates a `span` tag with classes `label label-[color]`
+* `alert [color=?]`: generates a `div` tag with classes `alert alert-[color]`, color is default `info`
+* `breadcrumb`: generates a `ol` tag with class `breadcrumb`, the children of whom would be wrapped in an `<a>` in a `<li>`, expect the last child, who will be replaced as a `<li class='active'>`
 * `modal`: generates a [bootstrap modal](http://www.w3schools.com/bootstrap/bootstrap_modal.asp), whose children are placed under the `div.modal-body`
     * `title`: as a child of a `modal` tag, it will be placed under the `div.modal-head` in an `h4` tag

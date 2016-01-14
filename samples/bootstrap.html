@@ -51,5 +51,7 @@ form-h
 </script>
 
 <script>
-document.body.innerHTML = topaz.renderBootstrap(document.getElementById('topaz-templ').innerHTML);
+var r = topaz.renderBootstrap(document.getElementById('topaz-templ').innerHTML);
+console.log(r)
+document.body.innerHTML = r;
 </script>

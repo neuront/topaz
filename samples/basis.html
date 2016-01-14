@@ -17,5 +17,7 @@ div
 </script>
 
 <script>
-document.body.innerHTML = topaz.renderHTMLBasis(document.getElementById('topaz-templ').innerHTML);
+var r = topaz.renderHTMLBasis(document.getElementById('topaz-templ').innerHTML);
+console.log(r)
+document.body.innerHTML = r;
 </script>
