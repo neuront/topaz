@@ -10,6 +10,10 @@ func renderHTMLApplied(elements)
 func renderBsf(elements, variables)
     return core.BootstrapFontawesomeBuilder(variables).applyAndRenderSync(elements)
 
+func applyBsf(text, variables)
+    b: core.BootstrapFontawesomeBuilder(variables)
+    return b.applyVariablesToSync(b.buildTextToElements(text))
+
 func applyVariables(elements, variables)
     return core.Builder(variables).applyVariablesToSync(elements)
 
@@ -142,7 +146,7 @@ span
         assert.strictEqual(2, elements.length)
 
         EXPECT: '''
-<input value="&\\"">
+<input value="&#38;&#34;">
 <span>
    &#60;===&#62;
 </span>
@@ -696,7 +700,7 @@ div
             :squeeze me
         '''.trim())
         assert.strictEqual('''
-<button data-id="5" data-target="my-target" data-esc="\\"" style="color:white;background-color:#ccd">
+<button data-id="5" data-target="my-target" data-esc="&#34;" style="color:white;background-color:#ccd">
             squeeze me
 </button>
         '''.trim(), r)
@@ -1431,6 +1435,119 @@ modal-toggle#ii color=info target=abc
 </button>
         '''.trim()
         assert.strictEqual(EXPECT, renderBsf(elements))
+
+    if true
+        it('breadcrumb', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: applyBsf('''
+breadcrumb#myBc
+    a href='#a'
+        :A
+    a#B href='#b'
+        :B
+    a
+        :C
+''', {})
+
+        assert.strictEqual(1, elements.length)
+        bc: elements[0]
+        assert.strictEqual('ol', bc.tag)
+        assert.deepEqual({id: 'myBc'}, bc.attributes)
+        assert.deepEqual(['breadcrumb'], bc.classes)
+        assert.strictEqual(3, bc.children.length)
+
+        li0: bc.children[0]
+        assert.strictEqual('li', li0.tag)
+        assert.strictEqual(1, li0.children.length)
+        assert.deepEqual([], li0.classes)
+        a0: li0.children[0]
+        assert.strictEqual('a', a0.tag)
+        assert.deepEqual({href: '#a', id: null}, a0.attributes)
+        assert.deepEqual([], a0.classes)
+        assert.strictEqual(1, a0.children.length)
+        assert.strictEqual('A', a0.children[0].text)
+
+        li1: bc.children[1]
+        assert.strictEqual('li', li1.tag)
+        assert.strictEqual(1, li1.children.length)
+        assert.deepEqual([], li1.classes)
+        a1: li1.children[0]
+        assert.strictEqual('a', a1.tag)
+        assert.deepEqual({href: '#b', id: 'B'}, a1.attributes)
+        assert.deepEqual([], a1.classes)
+        assert.strictEqual(1, a1.children.length)
+        assert.strictEqual('B', a1.children[0].text)
+
+        li2: bc.children[2]
+        assert.strictEqual('li', li2.tag)
+        assert.deepEqual(['active'], li2.classes)
+        assert.strictEqual(1, li2.children.length)
+        assert.strictEqual('C', li2.children[0].text)
+
+    if true
+        it('alert not dismiss', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: applyBsf('''
+alert#myAlert
+  :the quick brown fox
+alert color=info dismiss=0
+  :the quick brown fox
+''', {})
+
+        assert.strictEqual(2, elements.length)
+        alert: elements[0]
+        assert.strictEqual('div', alert.tag)
+        assert.deepEqual(['alert', 'alert-warning'], alert.classes)
+        assert.deepEqual({
+            id: 'myAlert',
+            role: 'alert',
+        }, alert.attributes)
+
+        alertInfo: elements[1]
+        assert.strictEqual('div', alertInfo.tag)
+        assert.deepEqual(['alert', 'alert-info'], alertInfo.classes)
+        assert.deepEqual({
+            id: null,
+            role: 'alert',
+        }, alertInfo.attributes)
+
+    if true
+        it('alert dismissable', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: applyBsf('''
+alert#myDismiss dismiss
+  :the quick
+  :brown fox
+alert dismiss=1 color=success
+  :123
+''', {})
+
+        assert.strictEqual(2, elements.length)
+        alert: elements[0]
+        assert.strictEqual('div', alert.tag)
+        assert.deepEqual(['alert', 'alert-warning', 'alert-dismissible'], alert.classes)
+        assert.deepEqual({
+            id: null,
+            role: 'alert',
+        }, alert.attributes)
+        assert.strictEqual(2, alert.children.length)
+        dismiss: alert.children[0]
+        assert.strictEqual('button', dismiss.tag)
+        content: alert.children[1]
+        assert.strictEqual('div', content.tag)
+        assert.deepEqual([], content.classes)
+        assert.deepEqual({id: 'myDismiss'}, content.attributes)
+        assert.strictEqual(2, content.children.length)
+        assert.strictEqual('the quick', content.children[0].text)
+        assert.strictEqual('brown fox', content.children[1].text)
+
+        alertSuc: elements[1]
+        assert.strictEqual('div', alertSuc.tag)
+        assert.deepEqual(['alert', 'alert-success', 'alert-dismissible'], alertSuc.classes)
+        assert.deepEqual({
+            id: null,
+            role: 'alert',
+        }, alertSuc.attributes)
 
     if true
         it('nested branches', %)

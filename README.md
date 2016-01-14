@@ -206,11 +206,12 @@ Both of them render template into HTML. The difference is `renderBootstrap` does
 Each of the `Builder` instance has similar APIs but they does different tag overridings (those overridings will be listed later). Here are they
 
 * `buildAndRenderText(text)`: renders `text` into HTML
-* `buildTextToElements(text)`: builds `text` into elements tree and returns it, without applying template variables
-* `applyVariablesTo(elements)`: apply template variables to elements and returns the applied
+* `buildTextToElementsSync(text)`: builds `text` into elements tree and returns it, without applying template variables
+* `applyVariablesToSync(elements)`: apply template variables to elements and returns the applied
 * `renderApplied(elements)`: render applied elements into HTML
 * `resetVariables(vars)`: reset the template variables of the builder
-* `setRenderFunc(tagName, callback(element, builder))`: set a callback function that is called to render each element of `tagName` after applied; this function shall return a render result as string
+* `setAppliedFunc(tagName, callback(element, builder))`: set a callback function that is called to each element of `tagName` after applied; the callback shall return an applied element
+* `setRenderFunc(tagName, callback(element, builder))`: set a callback function that is called to render each element of `tagName` before rendering to text; the callback shall return a render result as string
 
 ## Built-in Tag Overridings
 

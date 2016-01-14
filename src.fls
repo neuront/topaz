@@ -251,6 +251,9 @@ class ElementBase
     func append(child)
         this.throw_('Append an element to an unexpected place')
 
+    func prepend(child)
+        this.throw_('Prepend an element to an unexpected place')
+
     func getAppendPoint(child)
         return this
 
@@ -288,6 +291,10 @@ class CompoundElement: ElementBase
     func append(child)
         if child
             this.children.push(child)
+
+    func prepend(child)
+        if child
+            this.children.unshift(child)
 
     func getAppendPoint(indentLevel)
         if indentLevel <= this.indentLevel
@@ -371,11 +378,19 @@ class AppliedTagElement: TagElementBase
     func render(r)
         return r.renderTag(this)
 
-    func replaceTag(tagName)
+    func replaceTag(tagName, shiftChildren)
         e: AppliedTagElement(this.parent, this.indentLevel, this.line, tagName)
         this.classes |: e.addClass($)
-        this.children |: e.append($)
+        if true if shiftChildren = undefined else shiftChildren
+            this.children |: e.append($)
         return e
+
+    func wrapReplaceIn(tagName, replacingTag, shiftChildren)
+        p: AppliedTagElement(this.parent, this.indentLevel, this.line, tagName)
+        t: this.replaceTag(replacingTag if replacingTag else this.tag, shiftChildren)
+        p.append(t)
+        t.parent: p
+        return p
 
 class TagElement: TagElementBase
     ctor(parent, indentLevel, line, tag) super(parent, indentLevel, line, tag)
@@ -1488,7 +1503,7 @@ class Builder
     func renderAttrs(attrs)
         return (attrs |:
             if $ != null && $ != undefined
-                $result.push(' ', $k, '=', JSON.stringify($.toString()))
+                $result.push(' ', $k, '="', escapeText($.toString()) + '"')
         ).join('')
 
     func openTag(tag, elm)
@@ -1801,6 +1816,59 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
                                                             else 'default'))
         this.overrideAttrs(element, label, {}, {color: true})
         return label
+
+    func _applied_breadcrumb(element)
+        if element.children.length = 0
+            return element.replaceTag('div')
+        bc: element.replaceTag('ol', false)
+        this.overrideAttrs(element, bc, {}, {})
+        bc.addClass('breadcrumb')
+        for i range element.children.length - 1
+            e: element.children[i]
+            li: e.wrapReplaceIn('li', 'a')
+            this.overrideAttrs(e, li.children[0], {}, {})
+            bc.append(li)
+        active: element.children[element.children.length - 1].replaceTag('li')
+        active.addClass('active')
+        bc.append(active)
+        return bc
+
+    func overrideAttrsAsAlert(src, dst, overrides, ignore)
+        ignore.color: true
+        ignore.dismiss: true
+        this.overrideAttrs(src, dst, overrides, ignore)
+
+    func _addAlertClasses(src, dst)
+        dst.attributes.role: 'alert'
+        dst.addClass('alert')
+        dst.addClass('alert-' + (src.attributes.color if src.attributes.color else 'warning'))
+
+    func _applyDismissableAlert(element)
+        alr: element.wrapReplaceIn('div', 'div')
+        this.overrideAttrsAsAlert(element, alr.children[0], {}, {})
+        this._addAlertClasses(element, alr)
+        alr.addClass('alert-dismissible')
+        dismiss: AppliedTagElement(alr, alr.indentLevel + 1, alr.line, 'button')
+        dismiss.attributes: {
+            type: 'button',
+            'class': 'close',
+            'data-dismiss': 'alert',
+            'aria-label': 'Close',
+        }
+        close: AppliedTagElement(dismiss, dismiss.indentLevel + 1, dismiss.line, 'span')
+        close.attr('aria-hidden', 'true')
+        close.append(TextLineElement(close, close.indentLevel + 1, close.line, '&times;', (a): a))
+        dismiss.append(close)
+        alr.prepend(dismiss)
+        return alr
+
+    func _applied_alert(element)
+        if element.argsKey.dismiss || element.attributes.dismiss
+            return this._applyDismissableAlert(element)
+        alr: element.replaceTag('div')
+        this.overrideAttrsAsAlert(element, alr, {}, {})
+        this._addAlertClasses(element, alr)
+        return alr
 
 func renderBootstrap(text, variables)
     return BootstrapFontawesomeBuilder(variables).buildAndRenderTextSync(text)
