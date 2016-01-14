@@ -17,6 +17,13 @@ func applyBsf(text, variables)
 func applyVariables(elements, variables)
     return core.Builder(variables).applyVariablesToSync(elements)
 
+class IncludeTestBuilder: core.Builder
+    ctor(templs, var) super(var)
+        this.templs: templs
+
+    func includeTemplateSync(path)
+        return this.templs[path]
+
 if true
     describe('build static', %)
 
@@ -286,7 +293,7 @@ pre
 '''.trim())
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(2, $e.line)
+            assert.deepEqual({line: 2, templ: null}, $e.pos)
             assert.strictEqual('Option not set for text block', $e.message)
             assert.strictEqual('token', $e.type)
             assert.strictEqual('left', $e.object.image)
@@ -299,7 +306,7 @@ pre
 '''.trim())
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(2, $e.line)
+            assert.deepEqual({line: 2, templ: null}, $e.pos)
             assert.strictEqual('Invalid option value for text block', $e.message)
             assert.strictEqual('token', $e.type)
             assert.strictEqual('nothing', $e.object.image)
@@ -312,7 +319,7 @@ pre
 '''.trim())
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(2, $e.line)
+            assert.deepEqual({line: 2, templ: null}, $e.pos)
             assert.strictEqual('Duplicated option for text block', $e.message)
             assert.strictEqual('token', $e.type)
             assert.strictEqual('left', $e.object.image)
@@ -657,7 +664,7 @@ div
             renderHTML(elements, {x: {y: 'yy'}})
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(1, $e.line)
+            assert.deepEqual({line: 1, templ: null}, $e.pos)
             assert.strictEqual('Access property u from undefined', $e.message)
             assert.strictEqual('value', $e.type)
 
@@ -676,12 +683,12 @@ div
         assert.deepEqual({}, btn.attributes.data.dict)
         assert.deepEqual({
             color: {
-              line: 2,
-              value: 'white',
+                pos: {line: 2, templ: null},
+                value: 'white',
             },
             'background-color': {
-              line: 3,
-              value: '#ccd',
+                pos: {line: 3, templ: null},
+                value: '#ccd',
             },
         }, btn.attributes.style.dict)
 
@@ -1026,11 +1033,11 @@ hr
         assert.strictEqual('path/a', consq.path.value)
         assert.deepEqual({
             a: {
-                line: 2,
+                pos: {line: 2, templ: null},
                 value: 10,
             },
             b: {
-                line: 2,
+                pos: {line: 2, templ: null},
                 value: 20,
             },
         }, consq.values.dict)
@@ -1623,14 +1630,8 @@ p
             v: '',
         }), 'FF')
 
-describe('include', ():
-    class IncludeTestBuilder: core.Builder
-        ctor(templs, var) super(var)
-            this.templs: templs
-
-        func doIncludeSync(path)
-            return this.templs[path]
-
+if true
+    describe('include', %)
     if true
         it('sync static', %)
         builder: IncludeTestBuilder({
@@ -1728,8 +1729,6 @@ div
         }, div.children[1].attributes)
         assert.strictEqual('included', div.children[2].text)
 
-)
-
 if true
     describe('errors', %)
     if true
@@ -1742,7 +1741,7 @@ if true
             ''')
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(3, $e.line)
+            assert.deepEqual({line: 3, templ: null}, $e.pos)
             assert.strictEqual('Unexpected pattern', $e.message)
             assert.strictEqual('lex', $e.type)
             assert.strictEqual('`p class=m', $e.object)
@@ -1761,7 +1760,7 @@ if true
             '''.trim())
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(6, $e.line)
+            assert.deepEqual({line: 6, templ: null}, $e.pos)
             assert.strictEqual('Unexpected', $e.message)
             assert.strictEqual('token', $e.type)
             assert.strictEqual('=', $e.object.image)
@@ -1771,7 +1770,7 @@ if true
             builder.buildTextToElements('p.(a b)')
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(1, $e.line)
+            assert.deepEqual({line: 1, templ: null}, $e.pos)
             assert.strictEqual('Unexpected', $e.message)
             assert.strictEqual('token', $e.type)
             assert.strictEqual('b', $e.object.image)
@@ -1784,7 +1783,7 @@ if true
             '''.trim())
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(2, $e.line)
+            assert.deepEqual({line: 2, templ: null}, $e.pos)
             assert.strictEqual('Unexpected EOF, expect )', $e.message)
             assert.strictEqual('am', $e.type)
 
@@ -1795,7 +1794,7 @@ if true
             '''.trim())
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(2, $e.line)
+            assert.deepEqual({line: 2, templ: null}, $e.pos)
             assert.strictEqual('Mismatch parenthesis, expect )', $e.message)
             assert.strictEqual('token', $e.type)
             assert.strictEqual(']', $e.object.image)
@@ -1811,7 +1810,7 @@ div
 '''.trim())
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(2, $e.line)
+            assert.deepEqual({line: 2, templ: null}, $e.pos)
             assert.strictEqual('Unexpected children for void element', $e.message)
             assert.strictEqual('element', $e.type)
             assert.strictEqual('input', $e.object.tag)
@@ -1820,7 +1819,7 @@ div
             builder.buildTextToElements('p#a.b#c')
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(1, $e.line)
+            assert.deepEqual({line: 1, templ: null}, $e.pos)
             assert.strictEqual('Duplicate id', $e.message)
             assert.strictEqual('element', $e.type)
             assert.strictEqual('p', $e.object.tag)
@@ -1832,7 +1831,47 @@ div
             e: builder.buildAndRenderTextSync('% include a :')
             assert.ok(false, 'Expect error')
         catch
-            assert.strictEqual(1, $e.line)
+            assert.deepEqual({line: 1, templ: null}, $e.pos)
             assert.strictEqual('Unexpected', $e.message)
             assert.strictEqual('token', $e.type)
             assert.strictEqual(':', $e.object.image)
+
+    if true
+        it('build template', %)
+        builder: IncludeTestBuilder({
+            u: '''input value=(value''',
+        })
+        try
+            e: builder.buildAndRenderTextSync('% include u')
+            assert.ok(false, 'Expect error')
+        catch
+            assert.deepEqual({line: 1, templ: 'u'}, $e.pos)
+            assert.strictEqual('Unexpected EOF, expect )', $e.message)
+            assert.strictEqual('am', $e.type)
+
+    if true
+        it('apply template', %)
+        builder: IncludeTestBuilder({
+            u: '''div\ninput value=(a.value)''',
+        })
+        try
+            e: builder.buildAndRenderTextSync('% include u')
+            assert.ok(false, 'Expect error')
+        catch
+            assert.deepEqual({line: 2, templ: 'u'}, $e.pos)
+            assert.strictEqual('Access property value from undefined', $e.message)
+            assert.strictEqual('value', $e.type)
+
+    if true
+        it('after include', %)
+        builder: IncludeTestBuilder({
+            u: '''div\ninput value=(a.value)''',
+        })
+        try
+            e: builder.buildAndRenderTextSync('% include u\n% 2)')
+            assert.ok(false, 'Expect error')
+        catch
+            assert.deepEqual({line: 2, templ: null}, $e.pos)
+            assert.strictEqual('Unexpected', $e.message)
+            assert.strictEqual('token', $e.type)
+            assert.strictEqual(')', $e.object.image)
