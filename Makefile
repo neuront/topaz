@@ -1,5 +1,5 @@
 FLSC=flsc
-FLSCT=flsc -E require:describe:it
+FLSCT=flsc -e require:describe:it
 
 all:
 	$(FLSC) -i src.fls -p topaz > topaz.js

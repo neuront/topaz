@@ -21,6 +21,10 @@ class IncludeTestBuilder: core.Builder
     ctor(templs, var) super(var)
         this.templs: templs
 
+    func includeTemplate(path, %%)
+        setTimeout(%, 1)
+        return this.templs[path]
+
     func includeTemplateSync(path)
         return this.templs[path]
 
@@ -1728,6 +1732,85 @@ div
             value: undefined,
         }, div.children[1].attributes)
         assert.strictEqual('included', div.children[2].text)
+
+    if true
+        it('async static', %done)
+        builder: IncludeTestBuilder({
+            t: '''textarea\ninput''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % include t
+    % text
+'''.trim())
+
+        applied: builder.applyVariablesTo(e, %%)
+        assert.strictEqual(1, applied.length)
+        div: applied[0]
+        assert.strictEqual('div', div.tag)
+        assert.strictEqual(3, div.children.length)
+        assert.strictEqual('textarea', div.children[0].tag)
+        assert.strictEqual('input', div.children[1].tag)
+        assert.strictEqual('included', div.children[2].text)
+        done()
+
+    if true
+        it('async branch', %done)
+        builder: IncludeTestBuilder({
+            t: '''input\nbutton''',
+            u: '''p''',
+        }, {text: 'included', pred: true})
+
+        e: builder.buildTextToElements('''
+div
+    % if pred
+        % include t
+    % else
+        % include u
+    % text
+'''.trim())
+        applied: builder.applyVariablesTo(e, %%)
+        assert.strictEqual(1, applied.length)
+        div: applied[0]
+        assert.strictEqual('div', div.tag)
+        assert.strictEqual(3, div.children.length)
+        assert.strictEqual('input', div.children[0].tag)
+        assert.strictEqual('button', div.children[1].tag)
+        assert.strictEqual('included', div.children[2].text)
+        done()
+
+    if true
+        it('async loop with vars', %done)
+        builder: IncludeTestBuilder({
+            u: '''input data={id: id} value=(value)''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % for v in [{id: 0, value: 'The quick'}, {id: 1}]
+        % include u v
+    % text
+'''.trim())
+        applied: builder.applyVariablesTo(e, %%)
+        assert.strictEqual(1, applied.length)
+        div: applied[0]
+        assert.strictEqual('div', div.tag)
+        assert.strictEqual(3, div.children.length)
+        assert.strictEqual('input', div.children[0].tag)
+        assert.deepEqual({
+            id: null,
+            'data-id': '0',
+            value: 'The quick',
+        }, div.children[0].attributes)
+        assert.strictEqual('input', div.children[1].tag)
+        assert.deepEqual({
+            id: null,
+            'data-id': '1',
+            value: undefined,
+        }, div.children[1].attributes)
+        assert.strictEqual('included', div.children[2].text)
+        done()
 
 if true
     describe('errors', %)

@@ -282,6 +282,9 @@ class ElementBase
     func finish(builder)
         0
 
+    func applyVariables(parent, builder, newIndent, %%)
+        return this.applyVariablesSync(parent, builder, newIndent)
+
     func applyVariablesSync(parent, builder, newIndent)
         return this
 
@@ -435,7 +438,7 @@ class TagElement: TagElementBase
     func addClassExpr(cls)
         this.classes.push(cls)
 
-    func applyVariablesSync(parent, builder, newIndent)
+    func _apply(parent, builder, newIndent)
         element: AppliedTagElement(parent,
                                    this.indentLevel
                                            if newIndent = undefined
@@ -452,6 +455,15 @@ class TagElement: TagElementBase
             r: $.apply(builder)
             if r
                 element.addClass(r)
+        return element
+
+    func applyVariables(parent, builder, newIndent, %%)
+        element: this._apply(parent, builder, newIndent)
+        this.children |: element.append($.applyVariables(element, builder, $.indentLevel, %%))
+        return builder.onTagApplied(element)
+
+    func applyVariablesSync(parent, builder, newIndent)
+        element: this._apply(parent, builder, newIndent)
         this.children |: element.append($.applyVariablesSync(element, builder))
         return builder.onTagApplied(element)
 
@@ -509,6 +521,14 @@ class IfElement: CompoundElement
         this.consequence: this.children
         this.alternative: []
 
+    func applyVariables(parent, builder, ni, %%)
+        newIndent: this.indentLevel if ni = undefined else ni
+        if this.predicate.test(builder)
+            this.consequence |: parent.append($.applyVariables(parent, builder, newIndent, %%))
+        else
+            this.alternative |: parent.append($.applyVariables(parent, builder, newIndent, %%))
+        return null
+
     func applyVariablesSync(parent, builder, ni)
         newIndent: this.indentLevel if ni = undefined else ni
         if this.predicate.test(builder)
@@ -526,6 +546,15 @@ class ForElement: CompoundElement
         this.elementName: elementName
         this.object: object
 
+    func applyVariables(parent, builder, ni, %%)
+        newIndent: this.indentLevel if ni = undefined else ni
+        this.object.apply(builder) |:
+            if this.keyName
+                builder.setValue(this.keyName, $k)
+            builder.setValue(this.elementName, $)
+            this.children |: parent.append($.applyVariables(parent, builder, newIndent, %%))
+        return null
+
     func applyVariablesSync(parent, builder, ni)
         newIndent: this.indentLevel if ni = undefined else ni
         this.object.apply(builder) |:
@@ -542,6 +571,11 @@ class IncludeElement: ElementBase
 
     func getAppendPoint(child)
         return this.parent
+
+    func applyVariables(parent, builder, newIndent, %%)
+        builder.includeApply(parent, this, this.path.apply(builder), this.values.apply(builder),
+                             %%) |: parent.append($)
+        return null
 
     func applyVariablesSync(parent, builder, newIndent)
         builder.includeApplySync(parent, this, this.path.apply(builder),
@@ -1379,6 +1413,9 @@ class Builder
     func currentTempl()
         return this.templStack[0]
 
+    func buildAndRenderText(text, %%)
+        return this.applyAndRender(this.buildTextToElements(text), %%)
+
     func buildAndRenderTextSync(text)
         return this.applyAndRenderSync(this.buildTextToElements(text))
 
@@ -1388,6 +1425,11 @@ class Builder
         b.finish()
         return b.getElements()
 
+    func applyVariablesTo(elements, %%)
+        root: FakeRoot()
+        elements |: root.append($.applyVariables(root, this, 0, %%))
+        return root.children
+
     func applyVariablesToSync(elements)
         root: FakeRoot()
         elements |: root.append($.applyVariablesSync(root, this))
@@ -1395,6 +1437,19 @@ class Builder
 
     func clearCachedInclude()
         this.cachedInclude: {}
+
+    func includeApply(parent, incl, path, variables, %%)
+        ifnot this.cachedInclude[path]
+            t: this.includeTemplate(path, %%)
+            if t = undefined || t = null
+                incl.throw_('include path ' + path + ' returns ' + t)
+            this.templStack.unshift(path)
+            this.cachedInclude[path]: this.buildTextToElements(t)
+            this.templStack.shift()
+
+        this.varStack.unshift(variables)
+        this.cachedInclude[path] |: parent.append($.applyVariables(parent, this, undefined, %%))
+        this.varStack.shift()
 
     func includeApplySync(parent, incl, path, variables)
         ifnot this.cachedInclude[path]
@@ -1409,11 +1464,17 @@ class Builder
         this.cachedInclude[path] |: parent.append($.applyVariablesSync(parent, this))
         this.varStack.shift()
 
+    func includeTemplate(path, %%)
+        throw 'Builder.includeTemplate not implemented'
+
     func includeTemplateSync(path)
-        throw 'Builder.doIncludeApplySync not implemented'
+        throw 'Builder.includeTemplateSync not implemented'
 
     func renderApplied(elements)
         return (elements |: $.render(this)).join(this.eol())
+
+    func applyAndRender(elements, %%)
+        return this.renderApplied(this.applyVariablesTo(elements, %%))
 
     func applyAndRenderSync(elements)
         return this.renderApplied(this.applyVariablesToSync(elements))
