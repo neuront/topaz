@@ -217,12 +217,13 @@ Both of them render template into HTML. The difference is `renderBootstrap` does
 
 Each of the `Builder` instance has similar APIs but they does different tag overridings (those overridings will be listed later). Here are they
 
-* `buildAndRenderText(text)`: renders `text` into HTML
 * `buildTextToElementsSync(text)`: builds `text` into elements tree and returns it, without applying template variables
 * `buildTextToElements(text, callback(error, result))`: asynchronous version of `buildTextToElementsSync`
 * `applyVariablesToSync(elements)`: apply template variables to elements and returns the applied
 * `applyVariablesTo(elements, callback(error, result))`: asynchronous version of `applyVariablesToSync`
 * `renderApplied(elements)`: render applied elements into HTML
+* `buildAndRenderTextSync(text)`: renders `text` into HTML; similar to call `buildTextToElementsSync`, `applyVariablesToSync`, `renderApplied` at once
+* `buildAndRenderText(text, callback(error, result))`: asynchronous version of `buildAndRenderTextSync`
 * `resetVariables(vars)`: reset the template variables of the builder
 * `setAppliedFunc(tagName, callback(element, builder))`: set a callback function that is called to each element of `tagName` after applied; the callback shall return an applied element
 * `setRenderFunc(tagName, callback(element, builder))`: set a callback function that is called to render each element of `tagName` before rendering to text; the callback shall return a render result as string
@@ -263,7 +264,9 @@ The functions `renderHTMLBasis` and `renderBootstrap` use the default builder so
 * `grid [size=?] [offset=?]`: generates a `div` tag with class `col-sm-[size]` (default `size` is 4), `col-offset-[offset]` if `offset` is set and greater than 0
 * `grid-s [size=?] [offset=?]` / `grid-c [size=?] [offset=?]`: generates a `label` tag, with `size` and `offset` args affecting the same way with `grid` tag, and `-s` contains class `form-control-static` while `-c` contains `control-label`
 * `lbl [color=?]`: generates a `span` tag with classes `label label-[color]`
-* `alert [color=?]`: generates a `div` tag with classes `alert alert-[color]`, color is default `info`
+* `alert [color=?]`: generates a `div` tag with classes `alert alert-[color]`; color is default `info`
 * `breadcrumb`: generates a `ol` tag with class `breadcrumb`, the children of whom would be wrapped in an `<a>` in a `<li>`, expect the last child, who will be replaced as a `<li class='active'>`
+* `panel [color=?]`: generates `div` tag with classes `panel panel-[color]`
+    * `title`: as the `panel-heading` in the panel
 * `modal`: generates a [bootstrap modal](http://www.w3schools.com/bootstrap/bootstrap_modal.asp), whose children are placed under the `div.modal-body`
     * `title`: as a child of a `modal` tag, it will be placed under the `div.modal-head` in an `h4` tag

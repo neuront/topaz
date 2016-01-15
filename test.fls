@@ -1561,6 +1561,50 @@ alert dismiss=1 color=success
         }, alertSuc.attributes)
 
     if true
+        it('panel', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: applyBsf('''
+panel#myPanel
+    title#myPanelTitle
+        :Panel Title
+    p
+        :Body
+panel color=info
+    body
+        div
+            :Info Body
+''', {})
+
+        assert.strictEqual(2, elements.length)
+        panel: elements[0]
+        assert.strictEqual('div', panel.tag)
+        assert.deepEqual(['panel', 'panel-default'], panel.classes)
+        assert.deepEqual({id: 'myPanel'}, panel.attributes)
+        assert.strictEqual(2, panel.children.length)
+        title: panel.children[0]
+        assert.strictEqual('div', title.tag)
+        assert.deepEqual({id: 'myPanelTitle'}, title.attributes)
+        assert.deepEqual(['panel-heading'], title.classes)
+        assert.strictEqual(1, title.children.length)
+        assert.strictEqual('Panel Title', title.children[0].text)
+        body: panel.children[1]
+        assert.strictEqual('div', body.tag)
+        assert.deepEqual(['panel-body'], body.classes)
+        assert.strictEqual(1, body.children.length)
+        assert.strictEqual('p', body.children[0].tag)
+
+        panelInfo: elements[1]
+        assert.strictEqual('div', panel.tag)
+        assert.deepEqual(['panel', 'panel-info'], panelInfo.classes)
+        assert.deepEqual({id: null}, panelInfo.attributes)
+        assert.strictEqual(1, panelInfo.children.length)
+        bodyInfo: panelInfo.children[0]
+        assert.strictEqual('div', bodyInfo.tag)
+        assert.deepEqual(['panel-body'], bodyInfo.classes)
+        assert.strictEqual(1, bodyInfo.children.length)
+        assert.strictEqual('div', bodyInfo.children[0].tag)
+
+    if true
         it('nested branches', %)
         text: '''
 div

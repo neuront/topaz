@@ -1786,7 +1786,7 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
         e: elements[0]
         if elements.length > 1 && throwMsg
             elements[1].throw_(throwMsg)
-        return e
+        return e.replaceTag(tag)
 
     func _firstOrNull(elements, throwMsg)
         if elements.length = 0
@@ -1795,6 +1795,26 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
         if elements.length > 1 && throwMsg
             elements[1].throw_(throwMsg)
         return e
+
+    func _applied_panel(element)
+        panel: element.replaceTag('div')
+        panel.addClass('panel')
+        panel.addClass('panel-' + (element.attributes.color
+                                    if element.attributes.color else 'default'))
+        this.overrideAttrs(element, panel, {}, {color: true})
+        title: this._firstOrNull(panel.sliceChildren('title'), 'more than 1 titles for panel')
+        body: this._firstOrCreate(panel, panel.sliceChildren('body'), 'div',
+                                  'more than 1 bodies for panel')
+        body.addClass('panel-body')
+        panel.children |: body.append($)
+        panel.children: []
+        if title != null
+            t: title.replaceTag('div')
+            this.overrideAttrs(title, t, {}, {})
+            t.addClass('panel-heading')
+            panel.append(t)
+        panel.append(body)
+        return panel
 
     func _applied_modal(element)
         modal: element.replaceTag('div')
@@ -1833,9 +1853,10 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
         head.append(closeBtn)
         title: this._firstOrNull(modal.sliceChildren('title'), 'more than 1 titles for modal')
         if title != null
-            title.tag: 'h4'
-            title.addClass('modal-title')
-            head.append(title)
+            t: title.replaceTag('h4')
+            this.overrideAttrs(title, t, {}, {})
+            t.addClass('modal-title')
+            head.append(t)
         modal.children |: body.append($)
         modal.children: []
         modal.append(dialog)

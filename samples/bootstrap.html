@@ -10,6 +10,7 @@
 <script type='text/template' id='topaz-templ'>
 h1
     :Topaz Template for Bootstrap
+
 h2
     :Breadcrumb
 breadcrumb
@@ -19,6 +20,7 @@ breadcrumb
         :Mediate
     a
         :Last
+
 h2
     :Labels & grids
 form-h
@@ -28,6 +30,7 @@ form-h
                 lbl color=(c)
                     : Label
                     % c
+
 h2
     :Buttons
 form-h
@@ -37,17 +40,31 @@ form-h
                 btn color=(c)
                     : Button
                     % c
+
 h2
     :Alerts
 form-h
-    % for i, c in ['warning', 'danger', 'success', 'info']
-        row
-            grid size=5 offset=1
+    row
+        % for i, c in ['warning', 'danger', 'success', 'info']
+            grid size=4 offset=1
                 alert dismiss=(i % 2 == 0) color=(c)
                     : Alert
                     % c
                     % if i % 2 == 0
                         : (dismiss button without script)
+
+h2
+    :Panels
+form-h
+    row
+        % for c in ['default', 'info', 'success', 'primary', 'warning', 'danger']
+            grid-s size=4 offset=1
+                panel color=(c)
+                    title
+                        : Panel title for
+                        % c
+                    : Panel content for
+                    % c
 </script>
 
 <script>
