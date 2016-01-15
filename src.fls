@@ -460,7 +460,7 @@ class TagElement: TagElementBase
     func applyVariables(parent, builder, newIndent, %%)
         element: this._apply(parent, builder, newIndent)
         this.children |: element.append($.applyVariables(element, builder, $.indentLevel, %%))
-        setTimeout(%, 1)
+        setTimeout(%, 0)
         return builder.onTagApplied(element)
 
     func applyVariablesSync(parent, builder, newIndent)
