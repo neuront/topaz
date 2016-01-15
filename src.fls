@@ -541,6 +541,9 @@ class IfElement: CompoundElement
     func attachElse(_)
         this.children: this.alternative
 
+func _keys(obj)
+    return Object.keys(obj) if Object.keys else (obj |: [$k])
+
 class ForElement: CompoundElement
     ctor(parent, indentLevel, keyName, elementName, object) super(parent, indentLevel, object.pos)
         this.keyName: keyName
@@ -549,10 +552,13 @@ class ForElement: CompoundElement
 
     func applyVariables(parent, builder, ni, %%)
         newIndent: this.indentLevel if ni = undefined else ni
-        this.object.apply(builder) |:
+        obj: this.object.apply(builder)
+        if obj = null || obj = undefined
+            this.object.throw_('Iterate over ' + obj)
+        _keys(obj) |:
             if this.keyName
-                builder.setValue(this.keyName, $k)
-            builder.setValue(this.elementName, $)
+                builder.setValue(this.keyName, $)
+            builder.setValue(this.elementName, obj[$])
             this.children |: parent.append($.applyVariables(parent, builder, newIndent, %%))
         return null
 
@@ -1770,12 +1776,14 @@ class BootstrapFontawesomeBuilder: HTMLBasisBuilder
 
     func _applied_form_h(element)
         c: element.replaceTag('form')
+        this.overrideAttrs(element, c, {}, {})
         c.addClass('form-horizontal')
         c.addClass('form-submit')
         return c
 
     func _applied_row(element)
         c: element.replaceTag('div')
+        this.overrideAttrs(element, c, {}, {})
         c.addClass('form-group' if element.parent.isTag('form') ||
                                     element.parent.isTag('form-h') else 'row')
         return c

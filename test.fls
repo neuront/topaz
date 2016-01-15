@@ -1237,8 +1237,8 @@ container
         elements: builder.buildTextToElements('''
 div.form-horizontal
     icon user
-form-h
-    row
+form-h#myForm
+    row#myRow
         grid size=2
             icon file-o
         grid size=4 offset=2
@@ -1250,8 +1250,8 @@ form-h
     <i class="fa fa-user">
     </i>
 </div>
-<form class="form-horizontal form-submit">
-    <div class="form-group">
+<form class="form-horizontal form-submit" id="myForm">
+    <div class="form-group" id="myRow">
         <div class="col-sm-2">
             <i class="fa fa-file-o">
             </i>
@@ -1377,7 +1377,7 @@ div
         builder: core.BootstrapFontawesomeBuilder()
         elements: builder.buildTextToElements('''
 modal size=sm
-  p
+  p#myP.ppp
     :This is a modal
 ''')
 
@@ -1391,7 +1391,7 @@ modal size=sm
     </button>
    </div>
    <div class="modal-body">
-  <p>
+  <p class="ppp" id="myP">
     This is a modal
   </p>
    </div>
