@@ -21,11 +21,11 @@ class IncludeTestBuilder: core.Builder
     ctor(templs, var) super(var)
         this.templs: templs
 
-    func includeTemplate(path, %%)
+    func getTemplate(path, %%)
         setTimeout(%, 1)
         return this.templs[path]
 
-    func includeTemplateSync(path)
+    func getTemplateSync(path)
         return this.templs[path]
 
 if true

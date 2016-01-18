@@ -1447,7 +1447,7 @@ class Builder
 
     func includeApply(parent, incl, path, variables, %%)
         ifnot this.cachedInclude[path]
-            t: this.includeTemplate(path, %%)
+            t: this.getTemplate(path, %%)
             if t = undefined || t = null
                 incl.throw_('include path ' + path + ' returns ' + t)
             this.templStack.unshift(path)
@@ -1460,7 +1460,7 @@ class Builder
 
     func includeApplySync(parent, incl, path, variables)
         ifnot this.cachedInclude[path]
-            t: this.includeTemplateSync(path)
+            t: this.getTemplateSync(path)
             if t = undefined || t = null
                 incl.throw_('include path ' + path + ' returns ' + t)
             this.templStack.unshift(path)
@@ -1471,11 +1471,11 @@ class Builder
         this.cachedInclude[path] |: parent.append($.applyVariablesSync(parent, this))
         this.varStack.shift()
 
-    func includeTemplate(path, %%)
-        throw 'Builder.includeTemplate not implemented'
+    func getTemplate(path, %%)
+        throw 'Builder.getTemplate not implemented'
 
-    func includeTemplateSync(path)
-        throw 'Builder.includeTemplateSync not implemented'
+    func getTemplateSync(path)
+        throw 'Builder.getTemplateSync not implemented'
 
     func renderApplied(elements)
         return (elements |: $.render(this)).join(this.eol())

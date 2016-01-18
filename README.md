@@ -230,9 +230,9 @@ Each of the `Builder` instance has similar APIs but they does different tag over
 
 ### Callback for Include
 
-If `% include` is used in a template, the builder should implement either `includeTemplateSync` or `includeTemplate`, depends on which apply function (`applyVariablesToSync` or `applyVariablesTo`) is used to apply variables to elements.
+If `% include` is used in a template, the builder should implement either `getTemplateSync` or `getTemplate`, depends on which apply function (`applyVariablesToSync` or `applyVariablesTo`) is used to apply variables to elements.
 
-The `includeTemplateSync(path)` function takes the template **path** as parameter and should return a template string as result; and the `includeTemplate(path, callback(error, result))` takes the template path as parameter and should pass a template string to the callback as the second argument.
+The `getTemplateSync(path)` function takes the template **path** as parameter and should return a template string as result; and the `getTemplate(path, callback(error, result))` takes the template path as parameter and should pass a template string to the callback as the second argument.
 
 The **path** parameter don't have to be mapped to any file system path or URL, as they are just a template name for the builder. Once a template is loaded, it will be cached in the builder, but can be cleared at once by `Builder.clearCachedInclude()`.
 
