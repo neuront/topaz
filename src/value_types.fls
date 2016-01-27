@@ -1,0 +1,161 @@
+include 'src/exception.fls' as exc
+include 'src/utils.fls' as utils
+
+class ValueBase
+    ctor(pos)
+        this.pos: pos
+
+    func empty()
+        return false
+
+    func apply(builder)
+        return null
+
+    func applyAsAttr(builder, element, attr)
+        return element.attr(attr, this.apply(builder))
+
+    func literal()
+        this.throw_('Cannot convert to literal value')
+
+    func test(builder)
+        return utils.testTrue(this.apply(builder))
+
+    func throw_(msg)
+        throw exc.Exception(this.pos, msg, 'value', this)
+
+class EmptyExpr: ValueBase
+    ctor(pos) super(pos)
+        0
+
+    func empty()
+        return true
+
+class NullValue: ValueBase
+    ctor(pos) super(pos)
+        0
+
+    func apply()
+        return null
+
+class LiteralValue: ValueBase
+    ctor(pos, v) super(pos)
+        this.value: v
+
+    func apply(builder)
+        return this.value
+
+    func literal()
+        return this.value
+
+class NameValue: ValueBase
+    ctor(pos, n) super(pos)
+        this.name: n
+
+    func apply(builder)
+        return builder.getValue(this.name, this)
+
+    func literal()
+        return this.name
+
+UNARY_OP_FUNC: {
+    '+': (a): a,
+    '-': (a): -a,
+    '!': (a): !utils.testTrue(a),
+}
+
+class UnaryOpValue: ValueBase
+    ctor(pos, opImage, rhs) super(pos)
+        this.op: UNARY_OP_FUNC[opImage]
+        this.rhs: rhs
+
+    func apply(builder)
+        return this.op(this.rhs.apply(builder))
+
+BINARY_OP_FUNC: {
+    '+': (a, b): a + b,
+    '-': (a, b): a - b,
+    '*': (a, b): a * b,
+    '/': (a, b): a / b,
+    '%': (a, b): a % b,
+    '==': (a, b): a = b,
+    '!=': (a, b): a != b,
+    '<=': (a, b): a <= b,
+    '>=': (a, b): a >= b,
+    '<': (a, b): a < b,
+    '>': (a, b): a > b,
+    '&&': (a, b): b if utils.testTrue(a) else a,
+    '||': (a, b): a if utils.testTrue(a) else b,
+}
+
+class BinaryOpValue: ValueBase
+    ctor(pos, opImage, lhs, rhs) super(pos)
+        this.op: BINARY_OP_FUNC[opImage]
+        this.lhs: lhs
+        this.rhs: rhs
+
+    func apply(builder)
+        return this.op(this.lhs.apply(builder), this.rhs.apply(builder))
+
+class MemberAccess: ValueBase
+    ctor(pos, lhs, rhs) super(pos)
+        this.lhs: lhs
+        this.rhs: rhs.literal()
+
+    func apply(builder)
+        obj: this.lhs.apply(builder)
+        if obj = undefined || obj = null
+            this.throw_('Access property ' + this.rhs + ' from ' + obj)
+        return obj[this.rhs]
+
+class Lookup: ValueBase
+    ctor(pos, lhs, rhs) super(pos)
+        this.object: lhs
+        this.key: rhs
+
+    func apply(builder)
+        obj: this.object.apply(builder)
+        key: this.key.apply(builder)
+        if obj = undefined || obj = null
+            this.throw_('Lookup ' + key + ' from ' + obj)
+        return obj[key]
+
+class ListValue: ValueBase
+    ctor(pos) super(pos)
+        this.list: []
+
+    func apply(builder)
+        return this.list |: $.apply(builder)
+
+class DictValue: ValueBase
+    ctor(pos) super(pos)
+        this.dict: {}
+
+    func apply(builder)
+        r: {}
+        this.dict |:
+            r[$k]: $.apply(builder)
+        return r
+
+    func applyAsAttr(builder, element, attr)
+        builder.applyDictForAttr(element, attr, this.dict)
+
+class ConditionalValue: ValueBase
+    ctor(pos, predicate, consequence, alternative) super(pos)
+        this.pred: predicate
+        this.consq: consequence
+        this.alter: alternative
+
+    func apply(builder)
+        return this.consq.apply(builder) if this.pred.test(builder) else this.alter.apply(builder)
+
+export EmptyExpr: EmptyExpr
+export NullValue: NullValue
+export LiteralValue: LiteralValue
+export NameValue: NameValue
+export UnaryOpValue: UnaryOpValue
+export BinaryOpValue: BinaryOpValue
+export MemberAccess: MemberAccess
+export Lookup: Lookup
+export ListValue: ListValue
+export DictValue: DictValue
+export ConditionalValue: ConditionalValue

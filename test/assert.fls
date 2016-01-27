@@ -1,0 +1,5 @@
+assert: require('assert')
+
+export eq: assert.strictEqual
+export deepEq: assert.deepEqual
+export fail: (msg): assert.ok(false, msg)

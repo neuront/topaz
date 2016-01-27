@@ -1,0 +1,149 @@
+include 'test/assert.fls' as assert
+include 'test/core_wrap.fls' as core
+
+export run: (%%):
+    describe('errors', %)
+    if true
+        it('lex', %)
+        builder: core.Builder()
+        try
+            builder.buildTextToElements('''
+                    input#q.x type=text disabled
+                    `p class=m
+            ''')
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 3, templ: null}, e.pos)
+            assert.eq('Unexpected pattern', e.message)
+            assert.eq('lex', e.type)
+            assert.eq('`p class=m', e.object)
+
+    if true
+        it('syntax', %)
+        builder: core.Builder()
+        try
+            builder.buildTextToElements('''
+                textarea
+                  :::
+                  the quick brown fox jumps over the lazy dog.
+                  the quick brown fox jumps over the lazy dog.
+                  :::
+                  p#=
+            '''.trim())
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 6, templ: null}, e.pos)
+            assert.eq('Unexpected', e.message)
+            assert.eq('token', e.type)
+            assert.eq('=', e.object.image)
+            assert.eq('eq', e.object.type)
+
+        try
+            builder.buildTextToElements('p.(a b)')
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 1, templ: null}, e.pos)
+            assert.eq('Unexpected', e.message)
+            assert.eq('token', e.type)
+            assert.eq('b', e.object.image)
+            assert.eq('ident', e.object.type)
+
+        try
+            builder.buildTextToElements('''
+                div
+                    p.(a
+            '''.trim())
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: null}, e.pos)
+            assert.eq('Unexpected EOF, expect )', e.message)
+            assert.eq('am', e.type)
+
+        try
+            builder.buildTextToElements('''
+                div
+                    p.(a]
+            '''.trim())
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: null}, e.pos)
+            assert.eq('Mismatch parenthesis, expect )', e.message)
+            assert.eq('token', e.type)
+            assert.eq(']', e.object.image)
+
+    if true
+        it('elements', %)
+        builder: core.Builder()
+        try
+            e: builder.buildAndRenderTextSync('''
+div
+  input
+    p
+'''.trim())
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: null}, e.pos)
+            assert.eq('Unexpected children for void element', e.message)
+            assert.eq('element', e.type)
+            assert.eq('input', e.object.tag)
+
+        try
+            builder.buildTextToElements('p#a.b#c')
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 1, templ: null}, e.pos)
+            assert.eq('Duplicate id', e.message)
+            assert.eq('element', e.type)
+            assert.eq('p', e.object.tag)
+
+    if true
+        it('include syntax', %)
+        builder: core.Builder()
+        try
+            e: builder.buildAndRenderTextSync('% include a :')
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 1, templ: null}, e.pos)
+            assert.eq('Unexpected', e.message)
+            assert.eq('token', e.type)
+            assert.eq(':', e.object.image)
+
+    if true
+        it('build template', %)
+        builder: core.IncludeTestBuilder({
+            u: '''input value=(value''',
+        })
+        try
+            e: builder.buildAndRenderTextSync('% include u')
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 1, templ: 'u'}, e.pos)
+            assert.eq('Unexpected EOF, expect )', e.message)
+            assert.eq('am', e.type)
+
+    if true
+        it('apply template', %)
+        builder: core.IncludeTestBuilder({
+            u: '''div\ninput value=(a.value)''',
+        })
+        try
+            e: builder.buildAndRenderTextSync('% include u')
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: 'u'}, e.pos)
+            assert.eq('Access property value from undefined', e.message)
+            assert.eq('value', e.type)
+
+    if true
+        it('after include', %)
+        builder: core.IncludeTestBuilder({
+            u: '''div\ninput value=(a.value)''',
+        })
+        try
+            e: builder.buildAndRenderTextSync('% include u\n% 2)')
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: null}, e.pos)
+            assert.eq('Unexpected', e.message)
+            assert.eq('token', e.type)
+            assert.eq(')', e.object.image)

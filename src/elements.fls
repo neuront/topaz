@@ -1,0 +1,356 @@
+include 'src/exception.fls' as exc
+include 'src/utils.fls' as utils
+include 'src/value_types.fls' as valuet
+
+class ElementBase
+    ctor(parent, indentLevel, pos)
+        this.parent: parent
+        this.indentLevel: indentLevel
+        this.pos: pos
+
+    func append(child)
+        this.throw_('Append an element to an unexpected place')
+
+    func prepend(child)
+        this.throw_('Prepend an element to an unexpected place')
+
+    func getAppendPoint(child)
+        return this
+
+    func render(r)
+        this.throw_('Element base not renderable')
+
+    func throw_(msg)
+        throw exc.Exception(this.pos, msg, 'element', this)
+
+    func findChildren(tag)
+        return []
+
+    func sliceChildren(tag)
+        return []
+
+    func isTag(tag)
+        return false
+
+    func isText()
+        return false
+
+    func attachElse(t)
+        t.throw_('Else clause not match an if')
+
+    func finish(builder)
+        0
+
+    func applyVariables(parent, builder, newIndent, %%)
+        return this.applyVariablesSync(parent, builder, newIndent)
+
+    func applyVariablesSync(parent, builder, newIndent)
+        return this
+
+class CompoundElement: ElementBase
+    ctor(parent, indentLevel, pos) super(parent, indentLevel, pos)
+        this.children: []
+
+    func append(child)
+        if child
+            this.children.push(child)
+
+    func prepend(child)
+        if child
+            this.children.unshift(child)
+
+    func getAppendPoint(indentLevel)
+        if indentLevel <= this.indentLevel
+            return this.parent
+        if this.children.length = 0
+            return this
+        return this.lastChild().getAppendPoint(indentLevel)
+
+    func lastChild()
+        return this.children[this.children.length - 1]
+
+    func findChildren(tag)
+        return this.children |? $.isTag(tag)
+
+    func sliceChildren(tag)
+        r: this.children |? $.isTag(tag)
+        this.children: this.children |? !$.isTag(tag)
+        return r
+
+    func checkNoChildren()
+        if this.children.length != 0
+            this.throw_('Unexpected children for void element')
+
+class FakeRoot: CompoundElement
+    ctor() super(null, -1, -1)
+        this.children: []
+
+    func getAppendPoint(indentLevel)
+        if this.children.length = 0
+            return this
+        return this.lastChild().getAppendPoint(indentLevel)
+
+    func finish(builder)
+        if this.children.length != 0
+            this.lastChild().finish(builder)
+
+class TagElementBase: CompoundElement
+    ctor(parent, indentLevel, pos, tag) super(parent, indentLevel, pos)
+        this.tag: tag
+        this.attributes: {id: null}
+        this.args: []
+        this.argsKey: {}
+        this.classes: []
+        this.children: []
+
+    func isTag(tag)
+        return this.tag = tag
+
+    func finish(builder)
+        if this.children.length != 0
+            this.lastChild().finish(builder)
+        builder.onTagEnd(this)
+
+    func getOnlyArg(forwhat)
+        ifnot this.args && this.args.length = 1
+            this.throw_('Require only one argument: ' + forwhat)
+        return this.args[0]
+
+class AppliedTagElement: TagElementBase
+    ctor(parent, indentLevel, pos, tag) super(parent, indentLevel, pos, tag)
+        0
+
+    func arg(arg)
+        if this.argsKey[arg]
+            return
+        this.args.push(arg)
+        this.argsKey[arg]: true
+
+    func attr(key, value)
+        this.attributes[key]: value
+
+    func setId(id)
+        this.attributes.id: id
+
+    func addClass(cls)
+        this.classes.push(cls)
+
+    func applyVariablesSync(p, builder)
+        return this
+
+    func render(r)
+        return r.renderTag(this)
+
+    func replaceTag(tagName, shiftChildren)
+        e: AppliedTagElement(this.parent, this.indentLevel, this.pos, tagName)
+        this.classes |: e.addClass($)
+        if true if shiftChildren = undefined else shiftChildren
+            this.children |: e.append($)
+        return e
+
+    func wrapReplaceIn(tagName, replacingTag, shiftChildren)
+        p: AppliedTagElement(this.parent, this.indentLevel, this.pos, tagName)
+        t: this.replaceTag(replacingTag if replacingTag else this.tag, shiftChildren)
+        p.append(t)
+        t.parent: p
+        return p
+
+class TagElement: TagElementBase
+    ctor(parent, indentLevel, pos, tag) super(parent, indentLevel, pos, tag)
+        0
+
+    func arg(arg, pos)
+        if this.argsKey[arg]
+            return
+        this.args.push(valuet.LiteralValue(pos, arg))
+        this.argsKey[arg]: true
+
+    func argExpr(expr)
+        this.args.push(expr)
+
+    func _setAttr(key, v)
+        if this.attributes[key]
+            this.throw_('Duplicate attribute: ' + key)
+        this.attributes[key]: v
+
+    func attr(key, value, pos)
+        if key = 'class'
+            return value.split(' ') |: this.addClass($) if $.length != 0 else 0
+        this._setAttr(key, valuet.LiteralValue(pos, value))
+
+    func attrExpr(key, expr)
+        if key = 'class'
+            return this.addClassExpr(expr)
+        this._setAttr(key, expr)
+
+    func setId(id, pos)
+        this.setIdExpr(valuet.LiteralValue(pos, id))
+
+    func setIdExpr(id)
+        if this.attributes.id != null
+            this.throw_('Duplicate id')
+        this.attributes.id: id
+
+    func addClass(cls, pos)
+        this.addClassExpr(valuet.LiteralValue(pos, cls))
+
+    func addClassExpr(cls)
+        this.classes.push(cls)
+
+    func _apply(parent, builder, newIndent)
+        element: AppliedTagElement(parent,
+                                   this.indentLevel
+                                           if newIndent = undefined
+                                           else newIndent,
+                                   this.pos, this.tag)
+        this.attributes |:
+            if $
+                $.applyAsAttr(builder, element, $k)
+        this.args |:
+            r: $.apply(builder)
+            if r
+                element.arg(r)
+        this.classes |:
+            r: $.apply(builder)
+            if r
+                element.addClass(r)
+        return element
+
+    func applyVariables(parent, builder, newIndent, %%)
+        element: this._apply(parent, builder, newIndent)
+        this.children |: element.append($.applyVariables(element, builder, $.indentLevel, %%))
+        setTimeout(%, 0)
+        return builder.onTagApplied(element)
+
+    func applyVariablesSync(parent, builder, newIndent)
+        element: this._apply(parent, builder, newIndent)
+        this.children |: element.append($.applyVariablesSync(element, builder))
+        return builder.onTagApplied(element)
+
+class TextBase: ElementBase
+    ctor(parent, indentLevel, pos) super(parent, indentLevel, pos)
+        0
+
+    func getAppendPoint(indentLevel)
+        return this.parent
+
+    func append(child)
+        this.throw_('Unable to append to text')
+
+    func isText()
+        return true
+
+class TextLineElement: TextBase
+    ctor(parent, indentLevel, pos, text, escape) super(parent, indentLevel, pos)
+        this.text: text
+        this.escape: escape if escape else utils.escapeText
+
+    func render(r)
+        return r.renderTextLine(this, null, this.escape)
+
+class TextBlockElement: TextBase
+    ctor(parent, indentLevel, pos, lines, left, right, escape, eol) super(
+            parent, indentLevel, pos)
+        this.lines: lines
+        this.left: left
+        this.right: right
+        this.escape: escape
+        this.eol: eol
+
+    func render(r)
+        return r.renderTextBlock(this)
+
+class ValueElement: ElementBase
+    ctor(parent, indentLevel, value) super(parent, indentLevel, value.pos)
+        this.value: value
+
+    func getAppendPoint(indentLevel)
+        return this.parent
+
+    func append(child)
+        this.throw_('Unable to append to text')
+
+    func applyVariablesSync(parent, builder, ni)
+        value: this.value.apply(builder)
+        return TextLineElement(this.parent, this.indentLevel if ni = undefined else ni,
+                               this.pos, utils.toString(value))
+
+class IfElement: CompoundElement
+    ctor(parent, indentLevel, predicate) super(parent, indentLevel, predicate.pos)
+        this.predicate: predicate
+        this.consequence: this.children
+        this.alternative: []
+
+    func applyVariables(parent, builder, ni, %%)
+        newIndent: this.indentLevel if ni = undefined else ni
+        if this.predicate.test(builder)
+            this.consequence |: parent.append($.applyVariables(parent, builder, newIndent, %%))
+        else
+            this.alternative |: parent.append($.applyVariables(parent, builder, newIndent, %%))
+        return null
+
+    func applyVariablesSync(parent, builder, ni)
+        newIndent: this.indentLevel if ni = undefined else ni
+        if this.predicate.test(builder)
+            this.consequence |: parent.append($.applyVariablesSync(parent, builder, newIndent))
+        else
+            this.alternative |: parent.append($.applyVariablesSync(parent, builder, newIndent))
+        return null
+
+    func attachElse(_)
+        this.children: this.alternative
+
+class ForElement: CompoundElement
+    ctor(parent, indentLevel, keyName, elementName, object) super(parent, indentLevel, object.pos)
+        this.keyName: keyName
+        this.elementName: elementName
+        this.object: object
+
+    func applyVariables(parent, builder, ni, %%)
+        newIndent: this.indentLevel if ni = undefined else ni
+        obj: this.object.apply(builder)
+        if obj = null || obj = undefined
+            this.object.throw_('Iterate over ' + obj)
+        obj |:
+            if this.keyName
+                builder.setValue(this.keyName, $k)
+            builder.setValue(this.elementName, $)
+            this.children |: parent.append($.applyVariables(parent, builder, newIndent, %%))
+        return null
+
+    func applyVariablesSync(parent, builder, ni)
+        newIndent: this.indentLevel if ni = undefined else ni
+        this.object.apply(builder) |:
+            if this.keyName
+                builder.setValue(this.keyName, $k)
+            builder.setValue(this.elementName, $)
+            this.children |: parent.append($.applyVariablesSync(parent, builder, newIndent))
+        return null
+
+class IncludeElement: ElementBase
+    ctor(parent, indentLevel, path, values) super(parent, indentLevel, path.pos)
+        this.path: path
+        this.values: values
+
+    func getAppendPoint(child)
+        return this.parent
+
+    func applyVariables(parent, builder, newIndent, %%)
+        builder.includeApply(parent, this, this.path.apply(builder), this.values.apply(builder),
+                             %%) |: parent.append($)
+        return null
+
+    func applyVariablesSync(parent, builder, newIndent)
+        builder.includeApplySync(parent, this, this.path.apply(builder),
+                                 this.values.apply(builder)) |: parent.append($)
+        return null
+
+export FakeRoot: FakeRoot
+export AppliedTagElement: AppliedTagElement
+export TagElement: TagElement
+export TextLineElement: TextLineElement
+export TextBlockElement: TextBlockElement
+export ValueElement: ValueElement
+export IfElement: IfElement
+export ForElement: ForElement
+export IncludeElement: IncludeElement

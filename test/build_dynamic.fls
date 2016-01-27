@@ -1,0 +1,848 @@
+include 'test/assert.fls' as assert
+include 'test/core_wrap.fls' as core
+
+export run: (%%):
+    describe('build dynamic', %)
+    if true
+        it('apply', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''input value=(vv)''')
+        assert.eq(1, elements.length)
+        e: elements[0]
+        assert.eq('input', e.tag)
+        assert.eq('vv', e.attributes.value.name)
+
+        applied: e.applyVariablesSync(null, core.Builder({vv: 'The quick brown input'}))
+        assert.eq('input', applied.tag)
+        assert.eq('The quick brown input', applied.attributes.value)
+
+        assert.eq('input', e.tag)
+        assert.eq('vv', e.attributes.value.name)
+
+        elements_: builder.buildTextToElements('input#(ii).(cc).dd (aa) value=(vv)')
+        assert.eq(1, elements_.length)
+        e_: elements_[0]
+        assert.eq('input', e_.tag)
+        assert.eq('ii', e_.attributes.id.name)
+        assert.eq('vv', e_.attributes.value.name)
+        assert.eq(2, e_.classes.length)
+        assert.eq('cc', e_.classes[0].name)
+        assert.eq('dd', e_.classes[1].value)
+        assert.eq(1, e_.args.length)
+        assert.eq('aa', e_.args[0].name)
+
+        EXPECT: '<input class="whatever dd" id="myId" value="A lazy input">'
+
+        assert.eq(EXPECT, core.renderHTML(elements_, {
+            ii: 'myId',
+            vv: 'A lazy input',
+            cc: 'whatever',
+            dd: 'nothing',
+            aa: 'disabled',
+        }))
+
+    if true
+        it('expression', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('input value=(15 / a - 4 / b) ' +
+                                              'placeholder=(c.d * -2 + e.f * 3 % 2)')
+        assert.eq(1, elements.length)
+
+        applied: elements[0].applyVariablesSync(null, core.Builder({
+            a: 3,
+            b: 2,
+            c: {d: -2},
+            d: 97,
+            e: {f: 3},
+            f: 89,
+        }))
+        assert.eq('input', applied.tag)
+        assert.eq(3, applied.attributes.value)
+        assert.eq(5, applied.attributes.placeholder)
+
+        elements_: builder.buildTextToElements('input value=(1 + 1 - 2)')
+        assert.eq(1, elements_.length)
+        applied_: elements_[0].applyVariablesSync(null, core.Builder())
+
+        EXPECT: '<input value="0">'
+        assert.eq(EXPECT, applied_.render(core.HTMLBasisBuilder()))
+
+    if true
+        it('conditional variables', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+  input value=('a' + 'b' if x < y else 'c' + 'd')
+  input value=('a' + ('b' if x < y else 'c') + 'd')
+''')
+        assert.eq(1, elements.length)
+
+        applied: elements[0].applyVariablesSync(null, core.Builder({
+            x: 0,
+            y: 1,
+        }))
+        assert.eq(2, applied.children.length)
+        assert.eq('input', applied.children[0].tag)
+        assert.eq('ab', applied.children[0].attributes.value)
+        assert.eq('input', applied.children[1].tag)
+        assert.eq('abd', applied.children[1].attributes.value)
+
+        applied_: elements[0].applyVariablesSync(null, core.Builder({
+            x: 1,
+            y: 0,
+        }))
+        assert.eq(2, applied_.children.length)
+        assert.eq('input', applied_.children[0].tag)
+        assert.eq('cd', applied_.children[0].attributes.value)
+        assert.eq('input', applied_.children[1].tag)
+        assert.eq('acd', applied_.children[1].attributes.value)
+
+    it('compound conditions', ():
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+  % if !-x.val < y.val || !u.val && v.val
+    span
+  % else
+    i
+  % if !(-x.val < y.val || !u.val) && v.val
+    pre
+  % else
+    p
+''')
+        assert.eq(1, elements.length)
+
+        class TestBuilder: core.HTMLBasisBuilder
+            ctor(v) super(v)
+                this.triggers: []
+
+            func onTagApplied(element)
+                this.triggers.push({
+                    tag: element.tag,
+                    parent: null if element.parent = null else element.parent.tag,
+                })
+                return element
+
+        zptf_builder: TestBuilder({
+            x: {val: 0},
+            y: {val: 1},
+            u: {val: true},
+            v: {val: false},
+        })
+        applied_zptf: elements[0].applyVariablesSync(null, zptf_builder)
+        assert.eq(2, applied_zptf.children.length)
+        assert.eq('i', applied_zptf.children[0].tag)
+        assert.eq('p', applied_zptf.children[1].tag)
+
+        assert.deepEq([{
+            tag: 'i',
+            parent: 'div',
+        }, {
+            tag: 'p',
+            parent: 'div',
+        }, {
+            tag: 'div',
+            parent: null,
+        }], zptf_builder.triggers)
+
+        zmtf_builder: TestBuilder({
+            x: {val: 0},
+            y: {val: -1},
+            u: {val: true},
+            v: {val: false},
+        })
+        applied_zmtf: elements[0].applyVariablesSync(null, zmtf_builder)
+        assert.eq(2, applied_zmtf.children.length)
+        assert.eq('span', applied_zmtf.children[0].tag)
+        assert.eq('p', applied_zmtf.children[1].tag)
+
+        assert.deepEq([{
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'p',
+            parent: 'div',
+        }, {
+            tag: 'div',
+            parent: null,
+        }], zmtf_builder.triggers)
+
+        applied_zmtt: elements[0].applyVariablesSync(null, core.Builder({
+            x: {val: 0},
+            y: {val: -1},
+            u: {val: true},
+            v: {val: true},
+        }))
+        assert.eq(2, applied_zmtt.children.length)
+        assert.eq('span', applied_zmtt.children[0].tag)
+        assert.eq('pre', applied_zmtt.children[1].tag)
+
+        applied_zpff: elements[0].applyVariablesSync(null, core.Builder({
+            x: {val: 0},
+            y: {val: 1},
+            u: {val: false},
+            v: {val: false},
+        }))
+        assert.eq(2, applied_zpff.children.length)
+        assert.eq('i', applied_zpff.children[0].tag)
+        assert.eq('p', applied_zpff.children[1].tag)
+
+        applied_zmff: elements[0].applyVariablesSync(null, core.Builder({
+            x: {val: 0},
+            y: {val: -1},
+            u: {val: false},
+            v: {val: false},
+        }))
+        assert.eq(2, applied_zmff.children.length)
+        assert.eq('span', applied_zmff.children[0].tag)
+        assert.eq('p', applied_zmff.children[1].tag)
+
+        applied_zpft: elements[0].applyVariablesSync(null, core.Builder({
+            x: {val: 0},
+            y: {val: 1},
+            u: {val: false},
+            v: {val: true},
+        }))
+        assert.eq(2, applied_zpft.children.length)
+        assert.eq('span', applied_zpft.children[0].tag)
+        assert.eq('p', applied_zpft.children[1].tag)
+
+        applied_zmft: elements[0].applyVariablesSync(null, core.Builder({
+            x: {val: 0},
+            y: {val: 1},
+            u: {val: false},
+            v: {val: true},
+        }))
+        assert.eq(2, applied_zmft.children.length)
+        assert.eq('span', applied_zmft.children[0].tag)
+        assert.eq('p', applied_zmft.children[1].tag)
+    )
+
+    if true
+        it('numeric property', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('input value=0')
+
+        EXPECT: '<input value="0">'
+
+        assert.eq(EXPECT, core.renderHTML(elements))
+
+    it('list applied', ():
+        b: core.HTMLBasisBuilder()
+        elements: b.buildTextToElements('''
+div
+  % for i in x
+    span#i
+''')
+        assert.eq(1, elements.length)
+
+        class TestBuilder: core.HTMLBasisBuilder
+            ctor(v) super(v)
+                this.triggers: []
+
+            func onTagApplied(element)
+                this.triggers.push({
+                    tag: element.tag,
+                    parent: null if element.parent = null else element.parent.tag,
+                })
+                return element
+
+        builder: TestBuilder({
+            x: ['a', 'b', 'c'],
+        })
+        elements[0].applyVariablesSync(null, builder)
+
+        assert.deepEq([{
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'span',
+            parent: 'div',
+        }, {
+            tag: 'div',
+            parent: null,
+        }], builder.triggers)
+    )
+
+    if true
+        it('list', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+select
+  % for index, value in ["ab", x, "cd"]
+    option value=(index)
+      % "Got: " + value
+div
+''')
+        assert.eq(2, elements.length)
+
+        EXPECT: '''
+<select>
+  <option value="0">
+      Got: ab
+  </option>
+  <option value="1">
+      Got: ^&#60;v&#62;
+  </option>
+  <option value="2">
+      Got: cd
+  </option>
+</select>
+<div>
+</div>
+    '''.trim()
+        assert.eq(EXPECT, core.renderHTML(elements, {x: "^<v>"}))
+
+    if true
+        it('dict values', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+select
+  % for p in [{id: 0, name: 'Alice', age: aliceAge}, {id: 1, name: 'Bob', age: 17}]
+    option value=(p.id)
+      % "Name: " + p.name + ", age: " + p.age
+div
+''')
+        assert.eq(2, elements.length)
+
+        EXPECT: '''
+<select>
+  <option value="0">
+      Name: Alice, age: 23
+  </option>
+  <option value="1">
+      Name: Bob, age: 17
+  </option>
+</select>
+<div>
+</div>
+    '''.trim()
+        assert.eq(EXPECT, core.renderHTML(elements, {aliceAge: 23}))
+
+    if true
+        it('property', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('input value=(x.y) placeholder=(x.z.u)')
+
+        EXPECT: '''
+<input value="yy" placeholder="zu">
+    '''.trim()
+        assert.eq(EXPECT, core.renderHTML(elements, {x: {y: 'yy', z: {u: 'zu'}}}))
+
+        EXPECT_A: '''
+<input value="yy">
+    '''.trim()
+        assert.eq(EXPECT_A, core.renderHTML(elements, {x: {y: 'yy', z: {}}}))
+
+        try
+            core.renderHTML(elements, {x: {y: 'yy'}})
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 1, templ: null}, e.pos)
+            assert.eq('Access property u from undefined', e.message)
+            assert.eq('value', e.type)
+
+    if true
+        it('build dict', %)
+        builder: core.HTMLBasisBuilder()
+        e: builder.buildTextToElements('''
+        button data={} style={
+            color: 'white',
+            background-color: '#ccd',
+        }
+        '''.trim())
+        assert.eq(1, e.length)
+        btn: e[0]
+        assert.eq('button', btn.tag)
+        assert.deepEq({}, btn.attributes.data.dict)
+        assert.deepEq({
+            color: {
+                pos: {line: 2, templ: null},
+                value: 'white',
+            },
+            'background-color': {
+                pos: {line: 3, templ: null},
+                value: '#ccd',
+            },
+        }, btn.attributes.style.dict)
+
+    if true
+        it('apply dict', %)
+        builder: core.HTMLBasisBuilder({
+            x: 3,
+            y: '#ccd',
+            e: '"',
+        })
+        r: builder.buildAndRenderTextSync('''
+        button data={id: 2 + x, target: 'my-target', esc: e} style={
+            color: 'white',
+            background-color: y
+        }
+            :squeeze me
+        '''.trim())
+        assert.eq('''
+<button data-id="5" data-target="my-target" data-esc="&#34;" style="color:white;background-color:#ccd">
+            squeeze me
+</button>
+        '''.trim(), r)
+
+    if true
+        it('apply null', %)
+        builder: core.HTMLBasisBuilder({ x: null })
+        r: builder.buildAndRenderTextSync('''
+        button#('a' if x == null else 'b').('c' if x != null else 'd').(null)
+            :squeeze me
+        '''.trim())
+
+        assert.eq('''
+<button class="d" id="a">
+            squeeze me
+</button>
+        '''.trim(), r)
+
+    if true
+        it('look up', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+p
+   % 1 + x[0] / 2
+   :point,
+   % 2 * x[1] - 1
+   :coins
+''')
+
+        EXPECT: '''
+<p>
+   3
+   point,
+   199
+   coins
+</p>
+    '''.trim()
+        assert.eq(EXPECT, core.renderHTML(elements, {x: [4, 100]}))
+
+    if true
+        it('nested list', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+select
+  % for index, value in [["ab", x, "cd"], []][0]
+    option value=(index)
+      % "Got: " + value
+div
+''')
+        assert.eq(2, elements.length)
+
+        EXPECT: '''
+<select>
+  <option value="0">
+      Got: ab
+  </option>
+  <option value="1">
+      Got: uv
+  </option>
+  <option value="2">
+      Got: cd
+  </option>
+</select>
+<div>
+</div>
+    '''.trim()
+        assert.eq(EXPECT, core.renderHTML(elements, {x: "uv"}))
+
+    if true
+        it('branch root without else', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+% if x
+    input value=0
+p
+''')
+
+        assert.eq(3, elements.length)
+        applied: core.applyVariables(elements, {
+            x: [],
+        })
+        assert.eq(2, applied.length)
+
+        EXPECT: '''
+<div>
+</div>
+<p>
+</p>
+'''.trim()
+        assert.eq(EXPECT, core.renderHTMLApplied(applied))
+
+        applied_: core.applyVariables(elements, {
+            x: '0',
+        })
+        assert.eq(3, applied_.length)
+
+        EXPECT_: '''
+<div>
+</div>
+<input value="0">
+<p>
+</p>
+'''.trim()
+        assert.eq(EXPECT_, core.renderHTMLApplied(applied_))
+
+    if true
+        it('branch root', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+% if x + y
+    input value=0
+% else
+    label
+p
+''')
+        assert.eq(3, elements.length)
+        applied: core.applyVariables(elements, {
+            x: 1,
+            y: 2,
+        })
+        assert.eq(3, applied.length)
+
+        EXPECT: '''
+<div>
+</div>
+<input value="0">
+<p>
+</p>
+'''.trim()
+        assert.eq(EXPECT, core.renderHTMLApplied(applied))
+
+        applied_: core.applyVariables(elements, {
+            x: 1,
+            y: -1,
+        })
+        assert.eq(3, applied.length)
+
+        EXPECT_: '''
+<div>
+</div>
+<label>
+</label>
+<p>
+</p>
+'''.trim()
+        assert.eq(EXPECT_, core.renderHTMLApplied(applied_))
+
+    if true
+        it('branch not root', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+  % if x + y
+    input value=0
+  % else
+    label
+p
+''')
+        assert.eq(2, elements.length)
+        applied: core.applyVariables(elements, {
+            x: 1,
+            y: 2,
+        })
+        assert.eq(2, applied.length)
+
+        EXPECT: '''
+<div>
+  <input value="0">
+</div>
+<p>
+</p>
+'''.trim()
+        assert.eq(EXPECT, core.renderHTMLApplied(applied))
+
+        applied_: core.applyVariables(elements, {
+            x: 1,
+            y: -1,
+        })
+        assert.eq(2, applied.length)
+
+        EXPECT_: '''
+<div>
+  <label>
+  </label>
+</div>
+<p>
+</p>
+'''.trim()
+        assert.eq(EXPECT_, core.renderHTMLApplied(applied_))
+
+    if true
+        it('decls 1 for loop', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+% for v in x
+  p
+    input value=(v)
+hr
+''')
+        assert.eq(2, elements.length)
+        applied: core.applyVariables(elements, {
+            x: ['a', 'b', 'c'],
+        })
+        assert.eq(4, applied.length)
+
+        EXPECT: '''
+<p>
+    <input value="a">
+</p>
+<p>
+    <input value="b">
+</p>
+<p>
+    <input value="c">
+</p>
+<hr>
+    '''.trim()
+        assert.eq(EXPECT, core.renderHTMLApplied(applied))
+
+        assert.eq(2, elements.length)
+        applied_: core.applyVariables(elements, {
+            x: {
+                a: 'x',
+                b: 'y',
+            },
+        })
+        assert.eq(3, applied_.length)
+
+        EXPECT_: '''
+<p>
+    <input value="x">
+</p>
+<p>
+    <input value="y">
+</p>
+<hr>
+    '''.trim()
+        assert.eq(EXPECT_, core.renderHTMLApplied(applied_))
+
+    if true
+        it('decls 2 loop', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+% for k, v in x
+  p
+    span
+      % v
+    input value=(k)
+hr
+''')
+        assert.eq(2, elements.length)
+        applied: core.applyVariables(elements, {
+            x: ['a', 'b', 'c'],
+        })
+        assert.eq(4, applied.length)
+
+        EXPECT: '''
+<p>
+    <span>
+      a
+    </span>
+    <input value="0">
+</p>
+<p>
+    <span>
+      b
+    </span>
+    <input value="1">
+</p>
+<p>
+    <span>
+      c
+    </span>
+    <input value="2">
+</p>
+<hr>
+        '''.trim()
+        assert.eq(EXPECT, core.renderHTMLApplied(applied))
+
+        assert.eq(2, elements.length)
+        applied_: core.applyVariables(elements, {
+            x: {
+                a: 'x',
+                b: 'y',
+            },
+        })
+        assert.eq(3, applied_.length)
+
+        EXPECT_: '''
+<p>
+    <span>
+      x
+    </span>
+    <input value="a">
+</p>
+<p>
+    <span>
+      y
+    </span>
+    <input value="b">
+</p>
+<hr>
+        '''.trim()
+        assert.eq(EXPECT_, core.renderHTMLApplied(applied_))
+
+    if true
+        it('build include', %)
+        builder: core.Builder()
+        e: builder.buildTextToElements('''
+% if x
+    % include 'path/a' {a: 10, b: 20}
+% else
+    % include path-b
+'''.trim())
+        assert.eq(1, e.length)
+        ifE: e[0]
+        assert.eq('x', ifE.predicate.name)
+
+        assert.eq(1, ifE.consequence.length)
+        consq: ifE.consequence[0]
+        assert.eq('path/a', consq.path.value)
+        assert.deepEq({
+            a: {
+                pos: {line: 2, templ: null},
+                value: 10,
+            },
+            b: {
+                pos: {line: 2, templ: null},
+                value: 20,
+            },
+        }, consq.values.dict)
+
+        assert.eq(1, ifE.alternative.length)
+        alter: ifE.alternative[0]
+        assert.eq('path-b', alter.path.value)
+        assert.deepEq({}, alter.values.dict)
+
+    it('compound expr', ():
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+  % if !a || w < u + v
+    input value=a disabled=(m && n)
+  % else
+    input value=b disabled=(m && n)
+p
+''')
+        assert.eq(2, elements.length)
+
+        func applyTest(variables, expected, hint)
+            applied: core.applyVariables(elements, variables)
+            assert.eq(expected.trim(), core.renderHTMLApplied(applied), hint)
+
+        applyTest({
+            a: [],
+            w: 10,
+            u: 3,
+            v: 5,
+            m: true,
+            n: false,
+        }, '''
+<div>
+  <input value="a" disabled="false">
+</div>
+<p>
+</p>
+        ''', 'FFTF')
+
+        applyTest({
+            a: true,
+            w: 1,
+            u: 3,
+            v: 5,
+            m: true,
+            n: true,
+        }, '''
+<div>
+  <input value="a" disabled="true">
+</div>
+<p>
+</p>
+        ''', 'TTTT')
+
+        applyTest({
+            a: true,
+            w: 1,
+            u: 3,
+            v: -5,
+            m: false,
+            n: true,
+        }, '''
+<div>
+  <input value="b" disabled="false">
+</div>
+<p>
+</p>
+        ''', 'TFFT')
+
+        applyTest({
+            a: {},
+            w: 1,
+            u: 3,
+            v: -5,
+            m: false,
+            n: false,
+        }, '''
+<div>
+  <input value="a" disabled="false">
+</div>
+<p>
+</p>
+        ''', 'FFFF')
+    )
+
+    it('nested expr', ():
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+  input value=(w / (u * (v + p)))
+''')
+        assert.eq(1, elements.length)
+
+        func applyTest(variables, expected, hint)
+            applied: core.applyVariables(elements, variables)
+            assert.eq(expected.trim(), core.renderHTMLApplied(applied), hint)
+
+        applyTest({
+            w: 12,
+            u: 3,
+            v: 5,
+            p: -1,
+        }, '''
+<div>
+  <input value="1">
+</div>
+        ''', '12 / (3 * (5 + -1))')
+
+        applyTest({
+            w: 8,
+            u: 2,
+            v: -1,
+            p: -1,
+        }, '''
+<div>
+  <input value="-2">
+</div>
+        ''', '8 / (2 * (-1 + -1))')
+
+        applyTest({
+            w: 1,
+            u: 2,
+            v: 1,
+            p: -1,
+        }, '''
+<div>
+  <input value="Infinity">
+</div>
+        ''', '1 / (2 * (1 + -1))')
+    )

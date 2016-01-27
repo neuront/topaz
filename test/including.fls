@@ -1,0 +1,180 @@
+include 'test/assert.fls' as assert
+include 'test/core_wrap.fls' as core
+
+export run: (%%):
+    describe('include', %)
+    if true
+        it('sync static', %)
+        builder: core.IncludeTestBuilder({
+            t: '''textarea\ninput''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % include t
+    % text
+'''.trim())
+
+        applied: builder.applyVariablesToSync(e)
+        assert.eq(1, applied.length)
+        div: applied[0]
+        assert.eq('div', div.tag)
+        assert.eq(3, div.children.length)
+        assert.eq('textarea', div.children[0].tag)
+        assert.eq('input', div.children[1].tag)
+        assert.eq('included', div.children[2].text)
+
+        if true
+            builder.resetVariables({text: 'included again'})
+            applied: builder.applyVariablesToSync(e)
+            assert.eq(1, applied.length)
+            div: applied[0]
+            assert.eq('div', div.tag)
+            assert.eq(3, div.children.length)
+            assert.eq('textarea', div.children[0].tag)
+            assert.eq('input', div.children[1].tag)
+            assert.eq('included again', div.children[2].text)
+
+    if true
+        it('sync branch', %)
+        builder: core.IncludeTestBuilder({
+            t: '''input\nbutton''',
+            u: '''p''',
+        }, {text: 'included', pred: true})
+
+        e: builder.buildTextToElements('''
+div
+    % if pred
+        % include t
+    % else
+        % include u
+    % text
+'''.trim())
+        applied: builder.applyVariablesToSync(e)
+        assert.eq(1, applied.length)
+        div: applied[0]
+        assert.eq('div', div.tag)
+        assert.eq(3, div.children.length)
+        assert.eq('input', div.children[0].tag)
+        assert.eq('button', div.children[1].tag)
+        assert.eq('included', div.children[2].text)
+
+        if true
+            builder.resetVariables({text: 'included again', pred: false})
+            applied: builder.applyVariablesToSync(e)
+            assert.eq(1, applied.length)
+            div: applied[0]
+            assert.eq('div', div.tag)
+            assert.eq(2, div.children.length)
+            assert.eq('p', div.children[0].tag)
+            assert.eq('included again', div.children[1].text)
+
+    if true
+        it('sync loop with vars', %)
+        builder: core.IncludeTestBuilder({
+            u: '''input data={id: id} value=(value)''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % for v in [{id: 0, value: 'The quick'}, {id: 1}]
+        % include u v
+    % text
+'''.trim())
+        applied: builder.applyVariablesToSync(e)
+        assert.eq(1, applied.length)
+        div: applied[0]
+        assert.eq('div', div.tag)
+        assert.eq(3, div.children.length)
+        assert.eq('input', div.children[0].tag)
+        assert.deepEq({
+            id: null,
+            'data-id': '0',
+            value: 'The quick',
+        }, div.children[0].attributes)
+        assert.eq('input', div.children[1].tag)
+        assert.deepEq({
+            id: null,
+            'data-id': '1',
+            value: undefined,
+        }, div.children[1].attributes)
+        assert.eq('included', div.children[2].text)
+
+    if true
+        it('async static', %done)
+        builder: core.IncludeTestBuilder({
+            t: '''textarea\ninput''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % include t
+    % text
+'''.trim())
+
+        applied: builder.applyVariablesTo(e, %%)
+        assert.eq(1, applied.length)
+        div: applied[0]
+        assert.eq('div', div.tag)
+        assert.eq(3, div.children.length)
+        assert.eq('textarea', div.children[0].tag)
+        assert.eq('input', div.children[1].tag)
+        assert.eq('included', div.children[2].text)
+        done()
+
+    if true
+        it('async branch', %done)
+        builder: core.IncludeTestBuilder({
+            t: '''input\nbutton''',
+            u: '''p''',
+        }, {text: 'included', pred: true})
+
+        e: builder.buildTextToElements('''
+div
+    % if pred
+        % include t
+    % else
+        % include u
+    % text
+'''.trim())
+        applied: builder.applyVariablesTo(e, %%)
+        assert.eq(1, applied.length)
+        div: applied[0]
+        assert.eq('div', div.tag)
+        assert.eq(3, div.children.length)
+        assert.eq('input', div.children[0].tag)
+        assert.eq('button', div.children[1].tag)
+        assert.eq('included', div.children[2].text)
+        done()
+
+    if true
+        it('async loop with vars', %done)
+        builder: core.IncludeTestBuilder({
+            u: '''input data={id: id} value=(value)''',
+        }, {text: 'included'})
+
+        e: builder.buildTextToElements('''
+div
+    % for v in [{id: 0, value: 'The quick'}, {id: 1}]
+        % include u v
+    % text
+'''.trim())
+        applied: builder.applyVariablesTo(e, %%)
+        assert.eq(1, applied.length)
+        div: applied[0]
+        assert.eq('div', div.tag)
+        assert.eq(3, div.children.length)
+        assert.eq('input', div.children[0].tag)
+        assert.deepEq({
+            id: null,
+            'data-id': '0',
+            value: 'The quick',
+        }, div.children[0].attributes)
+        assert.eq('input', div.children[1].tag)
+        assert.deepEq({
+            id: null,
+            'data-id': '1',
+            value: undefined,
+        }, div.children[1].attributes)
+        assert.eq('included', div.children[2].text)
+        done()

@@ -1,0 +1,301 @@
+include 'test/assert.fls' as assert
+include 'test/core_wrap.fls' as core
+
+export run: (%%):
+    describe('build static', %)
+    it('elements triggers', ():
+        class TestBuilder: core.Builder
+            ctor() super()
+                this.triggers: []
+
+            func onTagBegin(element, stack)
+                this.triggers.push({
+                    type: 'tagBegin',
+                    tag: element.tag,
+                    parent: element.parent.tag,
+                })
+
+            func onTagEnd(element)
+                this.triggers.push({
+                    type: 'tagEnd',
+                    tag: element.tag,
+                    parent: element.parent.tag,
+                })
+
+        builder: TestBuilder()
+        builder.buildTextToElements('''
+div
+  span
+  input
+form
+  icon
+  p
+    button
+    label
+''')
+
+        assert.deepEq([
+            {type: 'tagBegin', tag: 'div', parent: undefined},
+                {type: 'tagBegin', tag: 'span', parent: 'div'},
+                {type: 'tagEnd', tag: 'span', parent: 'div'},
+                {type: 'tagBegin', tag: 'input', parent: 'div'},
+                {type: 'tagEnd', tag: 'input', parent: 'div'},
+            {type: 'tagEnd', tag: 'div', parent: undefined},
+            {type: 'tagBegin', tag: 'form', parent: undefined},
+                {type: 'tagBegin', tag: 'icon', parent: 'form'},
+                {type: 'tagEnd', tag: 'icon', parent: 'form'},
+                {type: 'tagBegin', tag: 'p', parent: 'form'},
+                    {type: 'tagBegin', tag: 'button', parent: 'p'},
+                    {type: 'tagEnd', tag: 'button', parent: 'p'},
+                    {type: 'tagBegin', tag: 'label', parent: 'p'},
+                    {type: 'tagEnd', tag: 'label', parent: 'p'},
+                {type: 'tagEnd', tag: 'p', parent: 'form'},
+            {type: 'tagEnd', tag: 'form', parent: undefined},
+        ], builder.triggers)
+    )
+
+    it('build & apply', ():
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('input#q.x type=text disabled')
+        assert.eq(1, elements.length)
+        e: elements[0]
+        assert.eq('input', e.tag)
+        assert.eq('q', e.attributes.id.value)
+        assert.eq('text', e.attributes.type.value)
+        assert.eq(1, e.classes.length)
+        assert.eq('x', e.classes[0].value)
+        assert.eq(1, e.args.length)
+        assert.eq('disabled', e.args[0].value)
+
+        class TestBuilder: core.HTMLBasisBuilder
+            ctor() super()
+                this.triggers: []
+
+            func onTagApplied(element)
+                this.triggers.push({
+                    tag: element.tag,
+                    parent: null if element.parent = null else element.parent.tag,
+                })
+                return element
+
+        testBuilder: TestBuilder()
+        applied: e.applyVariablesSync(null, testBuilder)
+        assert.eq('input', applied.tag)
+        assert.eq('q', applied.attributes.id)
+        assert.eq('text', applied.attributes.type)
+        assert.eq(1, applied.classes.length)
+        assert.eq('x', applied.classes[0])
+        assert.eq(1, applied.args.length)
+        assert.eq('disabled', applied.args[0])
+
+        assert.eq('input', e.tag)
+        assert.eq('q', e.attributes.id.value)
+        assert.eq('text', e.attributes.type.value)
+        assert.eq(1, e.classes.length)
+        assert.eq('x', e.classes[0].value)
+        assert.eq(1, e.args.length)
+        assert.eq('disabled', e.args[0].value)
+
+        assert.deepEq([{
+            tag: 'input',
+            parent: null,
+        }], testBuilder.triggers)
+    )
+
+    if true
+        it('render simple', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+input value=Hello
+span data-textValue="world!"
+''')
+        assert.eq(2, elements.length)
+
+        EXPECT: '''
+<input value="Hello">
+<span data-textValue="world!">
+</span>
+        '''.trim()
+        assert.eq(EXPECT, core.renderHTML(elements))
+
+    if true
+        it('render escape', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+input value='&"'
+span
+   :<===>
+''')
+        assert.eq(2, elements.length)
+
+        EXPECT: '''
+<input value="&#38;&#34;">
+<span>
+   &#60;===&#62;
+</span>
+        '''.trim()
+        assert.eq(EXPECT, core.renderHTML(elements))
+
+    if true
+        it('render elements', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+html5
+  head
+    charset utf-8
+    title
+      :Hello Topaz
+    cssfile "/static/css/bootstrap.css"
+    jsfile "/static/js/jquery.js"
+    js
+      $(document).ready(function() {
+        console.log("hello, world <3")
+      });
+  body
+    p
+      :Hello world <3
+''')
+        assert.eq(1, elements.length)
+        root: elements[0]
+        assert.eq(1, root.findChildren('head').length)
+        assert.eq(1, root.findChildren('body').length)
+
+        HEAD_EXPECT: '  ' + '''
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>
+      Hello Topaz
+    </title>
+    <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.css">
+    <script type="text/javascript" src="/static/js/jquery.js">
+    </script>
+    <script type="text/javascript">
+      $(document).ready(function() {
+        console.log("hello, world <3")
+      });
+    </script>
+  </head>
+    '''.trim()
+
+        assert.eq(HEAD_EXPECT, core.renderHTML(root.findChildren('head')), 'Render head')
+
+        BODY_EXPECT: '  ' + '''
+  <body>
+    <p>
+      Hello world &#60;3
+    </p>
+  </body>
+    '''.trim()
+
+        assert.eq(BODY_EXPECT, core.renderHTML(root.findChildren('body')), 'Render body')
+
+        ROOT_EXPECT: '''
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>
+      Hello Topaz
+    </title>
+    <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.css">
+    <script type="text/javascript" src="/static/js/jquery.js">
+    </script>
+    <script type="text/javascript">
+      $(document).ready(function() {
+        console.log("hello, world <3")
+      });
+    </script>
+  </head>
+  <body>
+    <p>
+      Hello world &#60;3
+    </p>
+  </body>
+    '''.trim()
+
+        assert.eq(ROOT_EXPECT, core.renderHTML([root]), 'Render all')
+
+    if true
+        it('render element attrs & classes', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div#root.topaz
+  span.topax.topay
+    :::
+    the quick "brown" <fox> jumps over a lazy dog
+''')
+
+        EXPECT: '''
+<div class="topaz" id="root">
+  <span class="topax topay">
+    the quick &#34;brown&#34; &#60;fox&#62; jumps over a lazy dog
+  </span>
+</div>
+        '''.trim()
+
+        assert.eq(EXPECT, core.renderHTML(elements))
+
+    if true
+        it('text block opts', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+pre
+  ::: left=trunc eol=br
+  the quick "brown" <fox>
+    <fox> jumps over a lazy dog
+div
+  ::: escape=no
+  This is a <strong>template</strong> engine.
+''')
+
+        EXPECT: '''
+<pre>
+the quick &#34;brown&#34; &#60;fox&#62;<br>  &#60;fox&#62; jumps over a lazy dog
+</pre>
+<div>
+  This is a <strong>template</strong> engine.
+</div>
+    '''.trim()
+
+        assert.eq(EXPECT, core.renderHTML(elements))
+
+    if true
+        it('text block opts with errors', %)
+        try
+            core.HTMLBasisBuilder().buildTextToElements('''
+pre
+  ::: left
+  the quick "brown" <fox> jumps over a lazy dog
+'''.trim())
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: null}, e.pos)
+            assert.eq('Option not set for text block', e.message)
+            assert.eq('token', e.type)
+            assert.eq('left', e.object.image)
+
+        try
+            core.HTMLBasisBuilder().buildTextToElements('''
+pre
+  ::: left=nothing
+  the quick "brown" <fox> jumps over a lazy dog
+'''.trim())
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: null}, e.pos)
+            assert.eq('Invalid option value for text block', e.message)
+            assert.eq('token', e.type)
+            assert.eq('nothing', e.object.image)
+
+        try
+            core.HTMLBasisBuilder().buildTextToElements('''
+pre
+  ::: left=trunc right=keep left=trim
+  the quick "brown" <fox> jumps over a lazy dog
+'''.trim())
+            assert.fail('Expect error')
+        catch e
+            assert.deepEq({line: 2, templ: null}, e.pos)
+            assert.eq('Duplicated option for text block', e.message)
+            assert.eq('token', e.type)
+            assert.eq('left', e.object.image)

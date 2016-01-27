@@ -1,0 +1,16 @@
+class Exception
+    ctor(pos, message, type, object)
+        this.pos: pos
+        this.message: message
+        this.type: type
+        this.object: object
+
+    func toString()
+        return JSON.stringify({
+            pos: this.pos,
+            message: this.message,
+            type: this.type,
+            object: this.object,
+        })
+
+export Exception: Exception

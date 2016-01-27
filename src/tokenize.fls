@@ -1,0 +1,73 @@
+include 'src/exception.fls' as exc
+
+PATTERNS: [
+    [/^[a-z_][0-9a-z_\-]*/i, 'ident'],
+
+    [/^"([^"\\]*(\\.[^"\\]*)*)"/i, 'value', 'str'],
+    [/^'([^'\\]*(\\.[^'\\]*)*)'/i, 'value', 'str'],
+    [/^[0-9]+/, 'value', 'num'],
+    [/^[0-9]*\.[0-9]+/, 'value', 'num'],
+
+    [/^==/, 'op', 'eq'],
+    [/^<=/, 'op', 'le'],
+    [/^>=/, 'op', 'ge'],
+    [/^!=/, 'op', 'ne'],
+    [/^</, 'op', 'lt'],
+    [/^>/, 'op', 'gt'],
+
+    [/^&&/, 'op', 'and'],
+    [/^\|\|/, 'op', 'or'],
+    [/^!/, 'op', 'not'],
+
+    [/^\+/, 'op', 'plus'],
+    [/^\-/, 'op', 'minus'],
+    [/^\*/, 'op', 'times'],
+    [/^\//, 'op', 'div'],
+
+    [/^=/, 'eq'],
+    [/^#/, 'shp'],
+    [/^\./, 'dot'],
+    [/^%/, 'percentage'],
+    [/^,/, 'comma'],
+    [/^:/, 'colon'],
+
+    [/^\(/, 'openparen'],
+    [/^\)/, 'closeparen'],
+    [/^\[/, 'openbracket'],
+    [/^\]/, 'closebracket'],
+    [/^\{/, 'openbrace'],
+    [/^\}/, 'closebrace'],
+]
+
+class Token
+    ctor(image, type, detail, pos)
+        this.image: image
+        this.type: type
+        this.detail: detail if detail else type
+        this.pos: pos
+
+    func throw_(msg)
+        throw exc.Exception(this.pos, msg, 'token', this)
+
+    func unexpected()
+        this.throw_('Unexpected')
+
+func tokenize(string, line, templ)
+    func tkz(string, result)
+        func nextToken(string)
+            pos: {line: line, templ: templ}
+            PATTERNS |:
+                r: $[0].exec(string)
+                if r
+                    return [Token(r[0], $[1], $[2], pos), string.replace($[0], '').trimLeft()]
+            throw exc.Exception(pos, 'Unexpected pattern', 'lex', string)
+
+        if string.length = 0
+            return result
+        r: nextToken(string)
+        result.push(r[0])
+        return tkz(r[1], result)
+    return tkz(string, [])
+
+export tokenize: tokenize
+export Token: Token

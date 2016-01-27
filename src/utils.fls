@@ -1,0 +1,31 @@
+func testTrue(a)
+    if typeof a = 'boolean'
+        return a
+    if typeof a = 'number'
+        return a != 0 && !isNaN(a)
+    a |:
+        return true
+    return false
+
+func toString(a)
+    if a = undefined || a = null
+        return a + ''
+    return a.toString()
+
+ESCAPE_RE: /[<>'"&]/g
+INDENT_RE: *RegExp('^[ ]*')
+
+func escapeText(s)
+    return s.replace(ESCAPE_RE, (r): '&#' + r.charCodeAt(0) + ';')
+
+func indentLv(string)
+    return INDENT_RE.exec(string)[0].length
+
+func findFuncName(prefix, tag)
+    return prefix + tag.replace(/-/g, '_')
+
+export testTrue: testTrue
+export toString: toString
+export escapeText: escapeText
+export indentLv: indentLv
+export findFuncName: findFuncName

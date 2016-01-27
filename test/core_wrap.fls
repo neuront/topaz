@@ -1,0 +1,39 @@
+core: require('./topaz')
+
+func renderHTML(elements, variables)
+    return core.HTMLBasisBuilder(variables).applyAndRenderSync(elements)
+
+func renderHTMLApplied(elements)
+    return core.HTMLBasisBuilder().renderApplied(elements)
+
+func renderBsf(elements, variables)
+    return core.BootstrapFontawesomeBuilder(variables).applyAndRenderSync(elements)
+
+func applyBsf(text, variables)
+    b: core.BootstrapFontawesomeBuilder(variables)
+    return b.applyVariablesToSync(b.buildTextToElements(text))
+
+func applyVariables(elements, variables)
+    return core.Builder(variables).applyVariablesToSync(elements)
+
+class IncludeTestBuilder: core.Builder
+    ctor(templs, var) super(var)
+        this.templs: templs
+
+    func getTemplate(path, %%)
+        setTimeout(%, 1)
+        return this.templs[path]
+
+    func getTemplateSync(path)
+        return this.templs[path]
+
+export Builder: core.Builder
+export HTMLBasisBuilder: core.HTMLBasisBuilder
+export BootstrapFontawesomeBuilder: core.BootstrapFontawesomeBuilder
+export renderBootstrap: core.renderBootstrap
+export renderHTML: renderHTML
+export renderHTMLApplied: renderHTMLApplied
+export renderBsf: renderBsf
+export applyBsf: applyBsf
+export applyVariables: applyVariables
+export IncludeTestBuilder: IncludeTestBuilder

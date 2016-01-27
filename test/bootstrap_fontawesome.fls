@@ -1,0 +1,506 @@
+include 'test/assert.fls' as assert
+include 'test/core_wrap.fls' as core
+
+export run: (%%):
+    describe('bootstrap fontawesome', %)
+    if true
+        it('build', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+container
+    row
+        grid size=4 offset=2
+            input#myInput placeholder=hello-world disabled
+''')
+
+        EXPECT: '''
+<div class="container">
+    <div class="row">
+        <div class="col-sm-4 col-sm-offset-2">
+            <input class="form-control" id="myInput" placeholder="hello-world" type="text" disabled="disabled">
+        </div>
+    </div>
+</div>
+        '''.trim()
+
+        assert.eq(EXPECT, core.renderBsf(elements))
+
+    if true
+        it('labels & icons', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+container
+    row
+        grid
+            lbl#myLab
+                :Default
+            icon user
+            lbl color=info
+                :Info
+''')
+
+        EXPECT: '''
+<div class="container">
+    <div class="row">
+        <div class="col-sm-4">
+            <span class="label label-default" id="myLab">
+                Default
+            </span>
+            <i class="fa fa-user">
+            </i>
+            <span class="label label-info">
+                Info
+            </span>
+        </div>
+    </div>
+</div>
+        '''.trim()
+
+        assert.eq(EXPECT, core.renderBsf(elements))
+
+    if true
+        it('form horizontal', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div.form-horizontal
+    icon user
+form-h#myForm
+    row#myRow
+        grid size=2
+            icon file-o
+        grid size=4 offset=2
+            input#myInput placeholder=hello-world disabled
+''')
+
+        EXPECT: '''
+<div class="form-horizontal">
+    <i class="fa fa-user">
+    </i>
+</div>
+<form class="form-horizontal form-submit" id="myForm">
+    <div class="form-group" id="myRow">
+        <div class="col-sm-2">
+            <i class="fa fa-file-o">
+            </i>
+        </div>
+        <div class="col-sm-4 col-sm-offset-2">
+            <input class="form-control" id="myInput" placeholder="hello-world" type="text" disabled="disabled">
+        </div>
+    </div>
+</form>
+        '''.trim()
+
+        assert.eq(EXPECT, core.renderBsf(elements))
+
+    if true
+        it('build grids', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+form-h
+    row
+        grid-c size=2
+            :Count
+        grid-s size=8
+            % x
+''')
+
+        EXPECT: '''
+<form class="form-horizontal form-submit">
+    <div class="form-group">
+        <label class="control-label col-sm-2">
+            Count
+        </label>
+        <label class="form-control-static col-sm-8">
+            91
+        </label>
+    </div>
+</form>
+        '''.trim()
+
+        assert.eq(EXPECT, core.renderBsf(elements, {x: 91}))
+
+    if true
+        it('form controls', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+input
+passwd
+checkbox
+  :Checkbox
+radio
+  :Radio
+checkbox inline
+  :Checkbox
+radio inline
+  :Radio
+  icon user
+''')
+
+        EXPECT: '''
+<input class="form-control" type="text">
+<input class="form-control" type="password">
+<div class="checkbox">
+ <label>
+  <input type="checkbox">
+  Checkbox
+ </label>
+</div>
+<div class="radio">
+ <label>
+  <input type="radio">
+  Radio
+ </label>
+</div>
+<label class="checkbox-inline">
+  <input type="checkbox">
+  Checkbox
+</label>
+<label class="radio-inline">
+  <input type="radio">
+  Radio
+  <i class="fa fa-user">
+  </i>
+</label>
+        '''.trim()
+
+        assert.eq(EXPECT, core.renderBsf(elements))
+
+    if true
+        it('action controls', %)
+        builder: core.HTMLBasisBuilder()
+        elements: builder.buildTextToElements('''
+div
+  btn
+    :A
+  btn onclick="alert(0)"
+    :B
+  btn.disable-btn color=info
+    :C
+  button#myBtn
+    :D
+''')
+
+        EXPECT: '''
+<div>
+  <button class="btn btn-default" type="button">
+    A
+  </button>
+  <button class="btn btn-default" onclick="alert(0)" type="button">
+    B
+  </button>
+  <button class="disable-btn btn btn-info" type="button">
+    C
+  </button>
+  <button id="myBtn">
+    D
+  </button>
+</div>
+        '''.trim()
+
+        assert.eq(EXPECT, core.renderBsf(elements))
+
+    if true
+        it('modals', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: builder.buildTextToElements('''
+modal size=sm
+  p#myP.ppp
+    :This is a modal
+''')
+
+        EXPECT_A: '''
+<div class="modal fade" role="dialog" tabindex="-1" aria-labelledby="" aria-hidden="true">
+ <div class="modal-dialog modal-sm">
+  <div class="modal-content">
+   <div class="modal-header">
+    <button class="close" type="button" data-dismiss="modal">
+     &times;
+    </button>
+   </div>
+   <div class="modal-body">
+  <p class="ppp" id="myP">
+    This is a modal
+  </p>
+   </div>
+  </div>
+ </div>
+</div>
+        '''.trim()
+        assert.eq(EXPECT_A, core.renderBsf(elements), 'A')
+
+        elements_: builder.buildTextToElements('''
+modal
+  title#myTitle
+    :Modal title <3
+  p
+    :<3
+''')
+
+        EXPECT_B: '''
+<div class="modal fade" role="dialog" tabindex="-1" aria-labelledby="" aria-hidden="true">
+ <div class="modal-dialog modal-lg">
+  <div class="modal-content">
+   <div class="modal-header">
+    <button class="close" type="button" data-dismiss="modal">
+     &times;
+    </button>
+  <h4 class="modal-title" id="myTitle">
+    Modal title &#60;3
+  </h4>
+   </div>
+   <div class="modal-body">
+  <p>
+    &#60;3
+  </p>
+   </div>
+  </div>
+ </div>
+</div>
+        '''.trim()
+        assert.eq(EXPECT_B, core.renderBsf(elements_), 'B')
+
+    if true
+        it('modals toggle', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: builder.buildTextToElements('''
+modal-toggle#ii color=info target=abc
+  :Def
+''')
+
+        EXPECT: '''
+<button class="btn btn-info" id="ii" data-target="#abc" data-toggle="modal" type="button">
+  Def
+</button>
+        '''.trim()
+        assert.eq(EXPECT, core.renderBsf(elements))
+
+    if true
+        it('breadcrumb', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: core.applyBsf('''
+breadcrumb#myBc
+    a href='#a'
+        :A
+    a#B href='#b'
+        :B
+    a
+        :C
+''', {})
+
+        assert.eq(1, elements.length)
+        bc: elements[0]
+        assert.eq('ol', bc.tag)
+        assert.deepEq({id: 'myBc'}, bc.attributes)
+        assert.deepEq(['breadcrumb'], bc.classes)
+        assert.eq(3, bc.children.length)
+
+        li0: bc.children[0]
+        assert.eq('li', li0.tag)
+        assert.eq(1, li0.children.length)
+        assert.deepEq([], li0.classes)
+        a0: li0.children[0]
+        assert.eq('a', a0.tag)
+        assert.deepEq({href: '#a', id: null}, a0.attributes)
+        assert.deepEq([], a0.classes)
+        assert.eq(1, a0.children.length)
+        assert.eq('A', a0.children[0].text)
+
+        li1: bc.children[1]
+        assert.eq('li', li1.tag)
+        assert.eq(1, li1.children.length)
+        assert.deepEq([], li1.classes)
+        a1: li1.children[0]
+        assert.eq('a', a1.tag)
+        assert.deepEq({href: '#b', id: 'B'}, a1.attributes)
+        assert.deepEq([], a1.classes)
+        assert.eq(1, a1.children.length)
+        assert.eq('B', a1.children[0].text)
+
+        li2: bc.children[2]
+        assert.eq('li', li2.tag)
+        assert.deepEq(['active'], li2.classes)
+        assert.eq(1, li2.children.length)
+        assert.eq('C', li2.children[0].text)
+
+    if true
+        it('alert not dismiss', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: core.applyBsf('''
+alert#myAlert
+  :the quick brown fox
+alert color=info dismiss=0
+  :the quick brown fox
+''', {})
+
+        assert.eq(2, elements.length)
+        alert: elements[0]
+        assert.eq('div', alert.tag)
+        assert.deepEq(['alert', 'alert-warning'], alert.classes)
+        assert.deepEq({
+            id: 'myAlert',
+            role: 'alert',
+        }, alert.attributes)
+
+        alertInfo: elements[1]
+        assert.eq('div', alertInfo.tag)
+        assert.deepEq(['alert', 'alert-info'], alertInfo.classes)
+        assert.deepEq({
+            id: null,
+            role: 'alert',
+        }, alertInfo.attributes)
+
+    if true
+        it('alert dismissable', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: core.applyBsf('''
+alert#myDismiss dismiss
+  :the quick
+  :brown fox
+alert dismiss=1 color=success
+  :123
+''', {})
+
+        assert.eq(2, elements.length)
+        alert: elements[0]
+        assert.eq('div', alert.tag)
+        assert.deepEq(['alert', 'alert-warning', 'alert-dismissible'], alert.classes)
+        assert.deepEq({
+            id: null,
+            role: 'alert',
+        }, alert.attributes)
+        assert.eq(2, alert.children.length)
+        dismiss: alert.children[0]
+        assert.eq('button', dismiss.tag)
+        content: alert.children[1]
+        assert.eq('div', content.tag)
+        assert.deepEq([], content.classes)
+        assert.deepEq({id: 'myDismiss'}, content.attributes)
+        assert.eq(2, content.children.length)
+        assert.eq('the quick', content.children[0].text)
+        assert.eq('brown fox', content.children[1].text)
+
+        alertSuc: elements[1]
+        assert.eq('div', alertSuc.tag)
+        assert.deepEq(['alert', 'alert-success', 'alert-dismissible'], alertSuc.classes)
+        assert.deepEq({
+            id: null,
+            role: 'alert',
+        }, alertSuc.attributes)
+
+    if true
+        it('panel', %)
+        builder: core.BootstrapFontawesomeBuilder()
+        elements: core.applyBsf('''
+panel#myPanel
+    title#myPanelTitle
+        :Panel Title
+    p
+        :Body
+panel color=info
+    body
+        div
+            :Info Body
+''', {})
+
+        assert.eq(2, elements.length)
+        panel: elements[0]
+        assert.eq('div', panel.tag)
+        assert.deepEq(['panel', 'panel-default'], panel.classes)
+        assert.deepEq({id: 'myPanel'}, panel.attributes)
+        assert.eq(2, panel.children.length)
+        title: panel.children[0]
+        assert.eq('div', title.tag)
+        assert.deepEq({id: 'myPanelTitle'}, title.attributes)
+        assert.deepEq(['panel-heading'], title.classes)
+        assert.eq(1, title.children.length)
+        assert.eq('Panel Title', title.children[0].text)
+        body: panel.children[1]
+        assert.eq('div', body.tag)
+        assert.deepEq(['panel-body'], body.classes)
+        assert.eq(1, body.children.length)
+        assert.eq('p', body.children[0].tag)
+
+        panelInfo: elements[1]
+        assert.eq('div', panel.tag)
+        assert.deepEq(['panel', 'panel-info'], panelInfo.classes)
+        assert.deepEq({id: null}, panelInfo.attributes)
+        assert.eq(1, panelInfo.children.length)
+        bodyInfo: panelInfo.children[0]
+        assert.eq('div', bodyInfo.tag)
+        assert.deepEq(['panel-body'], bodyInfo.classes)
+        assert.eq(1, bodyInfo.children.length)
+        assert.eq('div', bodyInfo.children[0].tag)
+
+    if true
+        it('nested branches', %)
+        text: '''
+div
+  % if x + y
+    % if u
+      span
+        :Count
+      input value=0
+  % else
+    % if v
+      icon user
+    % else
+      icon user-plus
+p
+  :Quick brown fox.
+        '''.trim()
+
+        assert.eq('''
+<div>
+  <span>
+        Count
+  </span>
+  <input class="form-control" value="0" type="text">
+</div>
+<p>
+  Quick brown fox.
+</p>
+        '''.trim(), core.renderBootstrap(text, {
+            x: 1,
+            y: 2,
+            u: true,
+        }), 'TT')
+
+        assert.eq('''
+<div>
+</div>
+<p>
+  Quick brown fox.
+</p>
+        '''.trim(), core.renderBootstrap(text, {
+            x: 1,
+            y: 2,
+            u: {},
+        }), 'TF')
+
+        assert.eq('''
+<div>
+  <i class="fa fa-user">
+  </i>
+</div>
+<p>
+  Quick brown fox.
+</p>
+        '''.trim(), core.renderBootstrap(text, {
+            x: NaN,
+            y: 2,
+            v: [undefined],
+        }), 'FT')
+
+        assert.eq('''
+<div>
+  <i class="fa fa-user-plus">
+  </i>
+</div>
+<p>
+  Quick brown fox.
+</p>
+        '''.trim(), core.renderBootstrap(text, {
+            x: [],
+            y: [],
+            v: '',
+        }), 'FF')

@@ -1,0 +1,799 @@
+include 'src/exception.fls' as exc
+include 'src/elements.fls' as elemt
+include 'src/value_types.fls' as valuet
+include 'src/tokenize.fls' as tknz
+include 'src/utils.fls' as utils
+
+class Automation
+    ctor(stack)
+        this.stack: stack
+
+    func activated()
+        0
+
+    func push(token)
+        f: '_push_' + token.type
+        if this[f]
+            return this[f](token)
+        token.unexpected()
+
+    func setPushFunc(tokenType, fn)
+        self: this
+        self['_push_' + tokenType]: (token): fn(self, token)
+
+    func reduced(expr)
+        throw 'Unimplemented expr'
+
+    func addLine(string, lineno)
+        this.stack.consume(tknz.tokenize(string.trim(), lineno, this.stack.templ()))
+
+    func finish()
+        this.stack.pop()
+
+    func finished()
+        return true
+
+    func forceFinish()
+        this.finish()
+
+UNARY_OP_PRI: {
+    '!': 2,
+    '+': 6,
+    '-': 6,
+}
+
+BINARY_OP_PRI: {
+    '||': 0,
+    '&&': 1,
+
+    '==': 3,
+    '!=': 3,
+    '<=': 3,
+    '>=': 3,
+    '<': 3,
+    '>': 3,
+
+    '+': 4,
+    '-': 4,
+
+    '*': 5,
+    '/': 5,
+    '%': 5,
+
+    '.': 7,
+}
+
+KEYWORDS: {
+    'for': true,
+    'in': true,
+    'if': true,
+    'else': true,
+    'null': true,
+    'include': true,
+}
+
+class DynamicDataAutomationBase: Automation
+    ctor(stack) super(stack)
+        0
+
+    func _push_ident(token)
+        if KEYWORDS[token.image]
+            f: '_pushkw_' + token.image
+            if this[f]
+                return this[f](token)
+            token.type: 'keyword'
+            token.detail: 'keyword'
+            return token.unexpected()
+        this._pushIdent(token)
+
+class ArithAutomation: DynamicDataAutomationBase
+    ctor(stack, pos) super(stack)
+        this._needFactor: true
+        this._exprStack: []
+        this._opStack: []
+        this.pos: pos
+        ['comma', 'closeparen', 'closebracket', 'closebrace'] |: this._setFollowing($)
+
+    func _setFollowing(tokenType)
+        this.setPushFunc(tokenType, (self, token): self._finishAt(token))
+
+    func _pushkw_else(token)
+        this._finishAt(token)
+
+    func _finishAt(token)
+        if this._exprStack.length = 0
+            token.unexpected()
+        this.finish()
+        this.stack.top().push(token)
+
+    func finish()
+        this._reduceBinary(-1)
+        this.stack.reduced(this._exprStack[0])
+
+    func finished()
+        return !this._needFactor
+
+    func forceFinish()
+        ifnot this.finished()
+            throw exc.Exception(this.pos, 'Unexpected EOF', 'am', this)
+        this.finish()
+
+    func _push_dot(token)
+        token.type: 'op'
+        token.construct: (exprStack):
+            rhs: exprStack.shift()
+            lhs: exprStack.shift()
+            return valuet.MemberAccess(token.pos, lhs, rhs)
+        return this._push_op(token)
+
+    func _push_percentage(token)
+        token.type: 'op'
+        return this._push_op(token)
+
+    func _push_op(token)
+        if this._needFactor
+            return this._pushUnaryOp(token)
+        token.construct: token.construct if token.construct else (exprStack):
+            rhs: exprStack.shift()
+            lhs: exprStack.shift()
+            return valuet.BinaryOpValue(token.pos, token.image, lhs, rhs)
+        token.pri: BINARY_OP_PRI[token.image]
+        this._reduceBinary(token.pri)
+        this._opStack.unshift(token)
+        this._needFactor: true
+
+    func _pushUnaryOp(token)
+        pri: UNARY_OP_PRI[token.image]
+        if pri = undefined
+            token.throw_('Unexpected operator')
+        token.pri: pri
+        token.construct: (exprStack):
+            rhs: exprStack.shift()
+            return valuet.UnaryOpValue(token.pos, token.image, rhs)
+        this._opStack.unshift(token)
+
+    func _reduceBinary(currentOpPri)
+        if this._opStack.length = 0
+            return
+        if this._opStack[0].pri >= currentOpPri
+            top: this._opStack.shift()
+            this._exprStack.unshift(top.construct(this._exprStack))
+            this._reduceBinary(currentOpPri)
+
+    func _pushIdent(token)
+        return this._pushFactor(token, valuet.NameValue)
+
+    func _push_value(token)
+        if token.detail = 'num'
+            return this._pushFactor(token, (ln, i): valuet.LiteralValue(ln, parseFloat(i)))
+        if token.detail = 'str'
+            return this._pushFactor(token, (ln, i): valuet.LiteralValue(ln, eval(i)))
+        return this._pushFactor(token, valuet.LiteralValue)
+
+    func _pushValue(value)
+        this._needFactor: false
+        this._exprStack.unshift(value)
+
+    func _pushFactor(token, construct)
+        ifnot this._needFactor
+            token.unexpected()
+        this._pushValue(construct(token.pos, token.image))
+
+    func _push_openparen(token)
+        ifnot this._needFactor
+            token.unexpected()
+        this.stack.push(ArithWrapAutomation(this.stack, token.pos, 'closeparen', ')'))
+        self: this
+        self.reduced: (expr): self._pushValue(expr)
+
+    func _push_openbracket(token)
+        self: this
+        if self._needFactor
+            self.reduced: (expr): self._pushValue(expr)
+            return this.stack.push(ListAutomation(this.stack, token.pos, 'closebracket', ']'))
+        this.stack.push(ArithWrapAutomation(this.stack, token.pos, 'closebracket', ']'))
+        this.needFactor: false
+        self.reduced: (expr):
+            t: tknz.Token('.', 'op', 'lookup', token.pos)
+            t.construct: (exprStack):
+                rhs: exprStack.shift()
+                lhs: exprStack.shift()
+                return valuet.Lookup(token.pos, lhs, rhs)
+            self._push_op(t)
+            self._pushValue(expr)
+
+    func _push_openbrace(token)
+        ifnot this._needFactor
+            token.unexpected()
+        self: this
+        this.reduced: (expr): self._pushValue(expr)
+        this.stack.push(DictAutomation(this.stack, token.pos, 'closebrace', '}'))
+
+    func _pushkw_null(token)
+        ifnot this._needFactor
+            token.unexpected()
+        this._pushValue(valuet.NullValue(token.pos))
+
+    func _pushkw_if(token)
+        if this._needFactor
+            token.unexpected()
+        this._reduceBinary(-1)
+        e: this._exprStack.pop()
+        this.stack.push(ConditionalExprAutomation(this.stack, token.pos, e))
+        self: this
+        self.reduced: (expr): self._pushValue(expr)
+
+class ArithAutomationAllowEmpty: ArithAutomation
+    ctor(stack, pos) super(stack, pos)
+        0
+
+    func _finishAt(token)
+        if this._empty()
+            return this.stack.tokenAfterReduced(valuet.EmptyExpr(token.pos), token)
+        return super._finishAt(token)
+
+    func finish()
+        if this._empty()
+            return this.stack.reduced(valuet.EmptyExpr())
+        return super.finish()
+
+    func finished()
+        return this._empty() || super.finished()
+
+    func _empty()
+        return this._exprStack.length = 0 && this._opStack.length = 0
+
+class ArithWrapAutomation: DynamicDataAutomationBase
+    ctor(stack, pos, closerType, closerImage) super(stack)
+        this.pos: pos
+        this.closeReport: ', expect ' + closerImage
+        this.setPushFunc(closerType, (self, token): self.finish())
+        this._expr: null
+
+    func activated()
+        this.stack.push(ArithAutomation(this.stack, this.pos))
+
+    func reduced(expr)
+        this._expr: expr
+
+    func finish()
+        this.stack.reduced(this._expr)
+
+    func finished()
+        return false
+
+    func _push_closeparen(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
+    func _push_closebracket(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
+    func _push_closebrace(token)
+        token.throw_('Mismatch parenthesis' + this.closeReport)
+
+    func forceFinish()
+        throw exc.Exception(this.pos, 'Unexpected EOF' + this.closeReport, 'am', this)
+
+class ConditionalExprAutomation: DynamicDataAutomationBase
+    ctor(stack, pos, consq) super(stack)
+        this.pos: pos
+        this._predicate: null
+        this._consequence: consq
+
+    func reduced(expr)
+        self: this
+        self._predicate: expr
+        self._pushkw_else: (token):
+            self.stack.push(ArithAutomation(self.stack, token.pos))
+            self.reduced: (expr): self.finish(expr)
+
+    func activated()
+        this.stack.push(ArithAutomation(this.stack, this.pos))
+
+    func finish(expr)
+        this.stack.reduced(valuet.ConditionalValue(
+                    this.pos, this._predicate, this._consequence, expr))
+
+class ListAutomation: ArithWrapAutomation
+    ctor(stack, pos, closerType, closerImage) super(stack, pos, closerType, closerImage)
+        this._expr: valuet.ListValue(pos)
+
+    func activated()
+        this.stack.push(ArithAutomationAllowEmpty(this.stack, this.pos))
+
+    func _push_comma()
+        this.activated()
+
+    func reduced(expr)
+        ifnot expr.empty()
+            this._expr.list.push(expr)
+
+class DictItemAutomation: DynamicDataAutomationBase
+    ctor(stack, dictVal) super(stack)
+        this._name: null
+        this._dictVal: dictVal
+
+    func _pushIdent(token)
+        this._name: token.image
+
+    func _push_value(token)
+        this._name: eval(token.image).toString()
+
+    func _push_colon(token)
+        this.stack.push(ArithAutomation(this.stack, token.pos))
+
+    func reduced(expr)
+        this._dictVal[this._name]: expr
+        this.finish()
+
+    func _push_closebrace(token)
+        if this._name = null
+            this.finish()
+            return this.stack.top().push(token)
+        token.throw_('Expect item value')
+
+    func finished()
+        return false
+
+class DictAutomation: ArithWrapAutomation
+    ctor(stack, pos, closerType, closerImage) super(stack, pos, closerType, closerImage)
+        this._expr: valuet.DictValue(pos)
+        this._key: null
+
+    func activated()
+        this.stack.push(DictItemAutomation(this.stack, this._expr.dict))
+
+    func _push_comma()
+        this.activated()
+
+class ForHeadAutomation: DynamicDataAutomationBase
+    ctor(forToken, stack, parent) super(stack)
+        this.forToken: forToken
+        this.parent: parent
+        this.declares: []
+        this._init()
+
+    func _init()
+        self: this
+        self._pushIdent: (token): self._pushDeclare(token)
+        self._push_comma: (token): token.unexpected()
+
+    func _pushkw_in(token)
+        if this.declares.length = 0 || this.declares.length > 2
+            this.forToken.throw_('For loop expects 1 or 2 declared names, but '
+                                 + this.declares.length)
+        this.stack.push(ArithAutomation(this.stack, token.pos))
+
+        self: this
+        self.reduced: (expr):
+            if this.declares.length = 1
+                self.parent.append(elemt.ForElement(
+                            self.parent, self.stack.indentLevel,
+                            null, this.declares[0], expr))
+            else
+                self.parent.append(elemt.ForElement(
+                            self.parent, self.stack.indentLevel,
+                            this.declares[0], this.declares[1], expr))
+            self.stack.pop()
+
+    func _waitComma()
+        self: this
+        self._pushIdent: (token): token.unexpected()
+        self._push_comma: (token): self._init()
+
+    func _pushDeclare(token)
+        this.declares.push(token.image)
+        this._waitComma()
+
+    func finished()
+        return false
+
+    func forceFinish()
+        this.forToken.throw_('Unexpected end of for loop')
+
+class CtrlFlowAutomation: DynamicDataAutomationBase
+    ctor(stack, parent) super(stack)
+        this.parent: parent
+        this._finished: false
+        this._reduced: (_): 0
+
+        ['value', 'op', 'openparen', 'openbracket'] |: this.setPushFunc(
+                $, (self, t): self._pushExprAm(t))
+
+    func finished()
+        return this._finished
+
+    func _pushkw_if(token)
+        self: this
+        self.stack.push(ArithAutomation(self.stack, token.pos))
+        self._reduced: (expr):
+            self.parent.append(elemt.IfElement(self.parent, self.stack.indentLevel, expr))
+            self._finished: true
+
+    func _pushkw_else(token)
+        ifnot this.parent.lastChild()
+            token.throw_('Else clause not match an if')
+        this.parent.lastChild().attachElse(token)
+        this._finished: true
+
+    func _pushkw_for(token)
+        this.stack.pop()
+        this.stack.push(ForHeadAutomation(token, this.stack, this.parent))
+
+    func _pushkw_include(token)
+        this.stack.pop()
+        this.stack.push(IncludeAutomation(this.stack, this.parent))
+
+    func _pushExprAm(token)
+        self: this
+        self.stack.push(ArithAutomation(self.stack, token.pos))
+        self._reduced: (expr):
+            self.parent.append(elemt.ValueElement(self.parent, self.stack.indentLevel, expr))
+        self.stack.top().push(token)
+        self._finished: true
+
+    func _pushIdent(token)
+        this._pushExprAm(token)
+
+    func reduced(expr)
+        return this._reduced(expr)
+
+    func forceFinish()
+        this.parent.throw_('''Unexpected `%' attached''')
+
+class IncludeAutomation: Automation
+    ctor(stack, parent) super(stack)
+        this.parent: parent
+        this._includePath: null
+        this._values: valuet.DictValue(0)
+
+    func _setIncludePath(path)
+        this._includePath: path
+        this._push_ident: (token): token.unexpected()
+        this._push_value: (token): token.unexpected()
+        this._push_openparen: (token): token.unexpected()
+
+        this.stack.push(ArithAutomationAllowEmpty(this.stack, path.pos))
+        self: this
+        self.reduced: (expr):
+            ifnot expr.empty()
+                self._values: expr
+            self.finish()
+
+    func _push_ident(token)
+        this._setIncludePath(valuet.LiteralValue(token.pos, token.image))
+
+    func _push_value(token)
+        this._setIncludePath(valuet.LiteralValue(token.pos, eval(token.image).toString()))
+
+    func _push_openparen(token)
+        self: this
+        this.stack.push(ArithWrapAutomation(this.stack, token.pos, 'closeparen', ')'))
+        this.reduced: (expr): self._setIncludePath(expr)
+
+    func finish()
+        this.parent.append(elemt.IncludeElement(this.parent, this.stack.indentLevel,
+                                                this._includePath, this._values))
+        super.finish()
+
+    func finished()
+        return this._includePath != null
+
+    func forceFinish()
+        ifnot this.finished()
+            this.throw_('Expect include path')
+
+class TagAutomation: Automation
+    ctor(stack, element) super(stack)
+        this.element: element
+        this._lastKey: null
+        this._restoreState()
+
+    func reduced(expr)
+        self: this
+        self._reduced(expr)
+        self._reduced: (): self.element.throw_('Unexpected expr')
+        self._restoreState()
+
+    func _allowOpenParen(reduced)
+        self: this
+        self._push_openparen: (token):
+            self.stack.push(ArithWrapAutomation(self.stack, token.pos, 'closeparen', ')'))
+            self._reduced: reduced
+
+    func _allowOpenBrace(reduced)
+        self: this
+        self._push_openbrace: (token):
+            self.stack.push(DictAutomation(self.stack, token.pos, 'closebrace', '}'))
+            self._reduced: reduced
+
+    func _restoreState()
+        self: this
+        self._forbidAll()
+        self._setFinishable()
+        self._push_value: (token): self.element.arg(eval(token.image), token.pos)
+        self._push_ident: (token): self._pushKey(token)
+        self._push_shp: (): self._waitId()
+        self._push_dot: (): self._waitClass()
+        self._allowOpenParen((expr): self.element.argExpr(expr))
+
+    func _forbidAll()
+        this._push_ident: null
+        this._push_value: null
+        this._push_shp: null
+        this._push_dot: null
+        this._push_eq: null
+        this._push_openparen: null
+
+    func _setUnfinishable(expect)
+        self: this
+        self._finished: false
+        self.finish: (): self.element.throw_('Unexpected end of line, expect ' + expect)
+
+    func _setFinishable()
+        self: this
+        self._finished: true
+        self.finish: (): self._finishAndAppend(false)
+
+    func _finishAndAppend(lastKeyAsArg)
+        if lastKeyAsArg
+            this.element.arg(this._lastKey.image, this._lastKey.pos)
+        super.finish()
+        if this.element.parent.children.length != 0
+            this.element.parent.lastChild().finish(this.stack.builder)
+        this.element.parent.append(this.element)
+        this.stack.onTagBegin(this.element)
+
+    func _pushKey(token)
+        self: this
+        self._forbidAll()
+        self._lastKey: token
+        self._push_eq: (): self._waitValue()
+        self._push_value: (token):
+            self.element.arg(self._lastKey.image, this._lastKey.pos)
+            self.element.arg(eval(token.image), token.pos)
+        self._push_ident: (token):
+            self.element.arg(self._lastKey.image, this._lastKey.pos)
+            self._pushKey(token)
+        self.finish: (): self._finishAndAppend(true)
+
+    func _waitId()
+        self: this
+        self._forbidAll()
+        self._push_ident: (token):
+            self.element.setId(token.image, token.pos)
+            self._restoreState()
+        self._setUnfinishable('ID')
+        self._allowOpenParen((expr): self.element.setIdExpr(expr))
+
+    func _waitClass()
+        self: this
+        self._forbidAll()
+        self._push_ident: (token):
+            self.element.addClass(token.image, token.pos)
+            self._restoreState()
+        self._setUnfinishable('class')
+        self._allowOpenParen((expr): self.element.addClassExpr(expr))
+
+    func _waitValue()
+        self: this
+        self._forbidAll()
+        self._push_ident: (token):
+            self.element.attr(self._lastKey.image, token.image, token.pos)
+            self._restoreState()
+        self._push_value: (token):
+            self.element.attr(self._lastKey.image, eval(token.image), token.pos)
+            self._restoreState()
+        self._setUnfinishable('attribute value')
+        reducedValue: (expr): self.element.attrExpr(self._lastKey.image, expr)
+        self._allowOpenParen(reducedValue)
+        self._allowOpenBrace(reducedValue)
+
+    func finished()
+        return this._finished
+
+    func forceFinish()
+        ifnot this.finished()
+            this.element.throw_('Unexpected finish of tag')
+        this.finish()
+
+_TEXTBLOCK_OPT_FUNCS: {
+    left: {
+        trim: (am): (ln): ln.trimLeft(),
+        trunc: (am): (ln): ln[am.indentLevel, ],
+        keep: (am): (ln): ln,
+    },
+    right: {
+        trim: (am): (ln): ln.trimRight(),
+        keep: (am): (ln): ln,
+    },
+    escape: {
+        yes: utils.escapeText,
+        no: (ln): ln,
+    },
+    eol: {
+        lf: '\n',
+        off: '',
+        br: '<br>',
+    },
+}
+
+class TextBlockAutomation: Automation
+    ctor(stack, appendPoint, pos, indentLevel, escape) super(stack)
+        this.appendPoint: appendPoint
+        this.pos: pos
+        this.indentLevel: indentLevel
+        this._lines: []
+
+        this._props: {
+            left: false,
+            right: false,
+            escape: false,
+            eol: false,
+        }
+        this._funcs: {
+            left: _TEXTBLOCK_OPT_FUNCS.left.keep,
+            right: _TEXTBLOCK_OPT_FUNCS.right.trim,
+            escape: _TEXTBLOCK_OPT_FUNCS.escape['yes' if escape else 'no'],
+            eol: _TEXTBLOCK_OPT_FUNCS.eol.lf,
+        }
+        this._lastProp: null
+
+        this._waitProp()
+
+    func _waitProp()
+        self: this
+        self._push_ident: (token):
+            self._lastProp: token
+            self._push_ident: (token): token.unexpected()
+        self._push_eq: (token): self._waitValue()
+
+    func _waitValue()
+        self: this
+        self._push_eq: (token): token.unexpected()
+        self._push_ident: (token):
+            self._setValue(token)
+            self._waitProp()
+
+    func _setValue(token)
+        ifnot this._props.hasOwnProperty(this._lastProp.image)
+            this._lastProp.throw_('Unknown option for text block')
+        if this._props[this._lastProp.image]
+            this._lastProp.throw_('Duplicated option for text block')
+        this._props[this._lastProp.image]: true
+        f: _TEXTBLOCK_OPT_FUNCS[this._lastProp.image][token.image]
+        ifnot f
+            token.throw_('Invalid option value for text block')
+        this._funcs[this._lastProp.image]: f
+        this._lastProp: null
+
+    func addLine(string, lineno)
+        if this._lastProp != null
+            this._lastProp.throw_('Option not set for text block')
+        if string.trimLeft() = ':::'
+            return this.finish()
+        if this.indentLevel = undefined
+            this.indentLevel = utils.indentLv(string)
+        this._lines.push(string)
+
+    func finish()
+        this.appendPoint.append(elemt.TextBlockElement(
+            this.appendPoint, this.stack.indentLevel, this.pos, this._lines,
+            this._funcs.left(this), this._funcs.right(this),
+            this._funcs.escape, this._funcs.eol))
+        super.finish()
+
+    func finished()
+        return false
+
+_TEXTBLOCK_PATTERN: /^:::/
+_TEXT_PATTERN: /^:.+$/
+
+class BootstrapAutomation: Automation
+    ctor(stack, appendPoint) super(stack)
+        this.appendPoint: appendPoint
+
+    func addLine(string, lineno)
+        strim: string.trimLeft()
+        if _TEXTBLOCK_PATTERN.exec(strim)
+            this.stack.push(TextBlockAutomation(
+                this.stack, this.appendPoint, lineno, this.stack.indentLevel, true))
+            return this.stack.consume(tknz.tokenize(strim.slice(3).trim(), lineno, this.stack.templ()))
+        if _TEXT_PATTERN.exec(strim)
+            return this.appendPoint.append(elemt.TextLineElement(
+                this.appendPoint, this.stack.indentLevel, lineno, strim.slice(1)))
+        super.addLine(string, lineno)
+
+    func _push_ident(token)
+        this.stack.push(TagAutomation(this.stack, elemt.TagElement(
+            this.appendPoint, this.stack.indentLevel, token.pos, token.image)))
+
+    func _push_percentage(token)
+        this.stack.push(CtrlFlowAutomation(this.stack, this.appendPoint))
+
+class AutomationStack
+    ctor(appendPoint, indentLevel, builder)
+        this.indentLevel: indentLevel
+        this.stack: [BootstrapAutomation(this, appendPoint)]
+        this.builder: builder
+
+    func templ()
+        return this.builder.currentTempl()
+
+    func top()
+        return this.stack[this.stack.length - 1]
+
+    func push(a)
+        this.stack.push(a)
+        a.activated()
+
+    func reduced(expr)
+        this.pop()
+        this.top().reduced(expr)
+
+    func tokenAfterReduced(expr, token)
+        this.reduced(expr)
+        this.top().push(token)
+
+    func pop()
+        return this.stack.pop()
+
+    func consume(tokens)
+        tokens |: this.top().push($)
+
+    func addLine(string, pos)
+        this.top().addLine(string, pos)
+
+    func tryFinish()
+        if this.stack.length = 0
+            return true
+        if this.top().finished()
+            this.top().finish()
+            return this.tryFinish()
+        return false
+
+    func forceFinish()
+        if this.stack.length != 0
+            this.top().forceFinish()
+            this.forceFinish()
+
+    func onTagBegin(element)
+        return this.builder.onTagBegin(element, this)
+
+class SyntaxBuilder
+    ctor(builder)
+        this.builder: builder
+        this.lineno: 0
+        this._stack: null
+        this._root: elemt.FakeRoot()
+
+    func getElements()
+        return this._root.children
+
+    func _applyStack(indentLevel)
+        this._stack: AutomationStack(this.getAppendPoint(indentLevel), indentLevel, this.builder)
+
+    func _initStackIfNull(indentLevel)
+        if this._stack = null
+            return this._applyStack(indentLevel)
+        if indentLevel < this._stack.indentLevel
+            this._stack.forceFinish()
+            return this._applyStack(indentLevel)
+
+    func getAppendPoint(indentLevel)
+        return this._root.getAppendPoint(indentLevel)
+
+    func addLine(string)
+        this.lineno: this.lineno + 1
+        this._initStackIfNull(utils.indentLv(string))
+        this._stack.addLine(string, this.lineno)
+        if this._stack.tryFinish()
+            this._stack: null
+
+    func finish()
+        if this._stack
+            this._stack.forceFinish()
+        this._root.finish(this.builder)
+
+export SyntaxBuilder: SyntaxBuilder
+export TextBlockAutomation: TextBlockAutomation
