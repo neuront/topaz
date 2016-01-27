@@ -36,31 +36,33 @@ class Automation
     func forceFinish()
         this.finish()
 
+enum FORCE_REDUCE, OR, AND, NOT, CMP, ADD, PRODUCT, UNARY_ADD, MEMBER
+
 UNARY_OP_PRI: {
-    '!': 2,
-    '+': 6,
-    '-': 6,
+    '!': NOT,
+    '+': UNARY_ADD,
+    '-': UNARY_ADD,
 }
 
 BINARY_OP_PRI: {
-    '||': 0,
-    '&&': 1,
+    '||': OR,
+    '&&': AND,
 
-    '==': 3,
-    '!=': 3,
-    '<=': 3,
-    '>=': 3,
-    '<': 3,
-    '>': 3,
+    '==': CMP,
+    '!=': CMP,
+    '<=': CMP,
+    '>=': CMP,
+    '<': CMP,
+    '>': CMP,
 
-    '+': 4,
-    '-': 4,
+    '+': ADD,
+    '-': ADD,
 
-    '*': 5,
-    '/': 5,
-    '%': 5,
+    '*': PRODUCT,
+    '/': PRODUCT,
+    '%': PRODUCT,
 
-    '.': 7,
+    '.': MEMBER,
 }
 
 KEYWORDS: {
@@ -107,7 +109,7 @@ class ArithAutomation: DynamicDataAutomationBase
         this.stack.top().push(token)
 
     func finish()
-        this._reduceBinary(-1)
+        this._reduceBinary(FORCE_REDUCE)
         this.stack.reduced(this._exprStack[0])
 
     func finished()
@@ -217,7 +219,7 @@ class ArithAutomation: DynamicDataAutomationBase
     func _pushkw_if(token)
         if this._needFactor
             token.unexpected()
-        this._reduceBinary(-1)
+        this._reduceBinary(FORCE_REDUCE)
         e: this._exprStack.pop()
         this.stack.push(ConditionalExprAutomation(this.stack, token.pos, e))
         self: this
